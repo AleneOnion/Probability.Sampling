@@ -78,7 +78,7 @@ rm(list=setdiff(ls(), c("att")))
 #the probabilty sites were restricted to waterbodies in the NHD classified as LakePond which includes reservoirs. 
 #restricted to those above 6.5 acres, 
 #within the boundaries of NYS, 
-#excluded wetlands by selecting only those in the NHD layer that are "LakePond" as well as examine sites using satellite imagery
+#we further excluded wetlands by examining satellite imagery and removing sites that are more than 50% covered by macrophytes
 
 head(att)
 
