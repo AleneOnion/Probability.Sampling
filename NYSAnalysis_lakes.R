@@ -73,6 +73,13 @@ rm(list=setdiff(ls(), c("att")))
 ################################################################################################################
 #The start of the NYSAnalysis code from Tony Olsen
 ################################################################################################################
+
+#PLease note that these were the criteria for selecting the target population
+#the probabilty sites were restricted to waterbodies in the NHD classified as LakePond which includes reservoirs. 
+#restricted to those above 6.5 acres, 
+#within the boundaries of NYS, 
+#excluded wetlands by selecting only those in the NHD layer that are "LakePond" as well as examine sites using satellite imagery
+
 head(att)
 
 # look at status variable
