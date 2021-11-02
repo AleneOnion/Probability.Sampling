@@ -96,50 +96,38 @@ addmargins(table(att$Eval_Status,att$statusTNT))
 #the first chunk of code I presume 
 ################################################################################################################
 #calculating weights for each strata
-#these initial weights are based on the total frame size
+#calculate the adjusted weight
+#The numerator is the original frame size value
+#the denominator is the actual number of samples sampled
+
 att<-att %>% 
-  mutate(wgt=NA,
-         wgt=ifelse(PROB_CAT=="(1,4]",17/6437,wgt),
-         wgt=ifelse(PROB_CAT=="(4,10]",2490/6437,wgt),
-         wgt=ifelse(PROB_CAT=="(10,20]",1003/6437,wgt),
-         wgt=ifelse(PROB_CAT=="(20,50]",616/6437,wgt),
-         wgt=ifelse(PROB_CAT==">50",500/6437,wgt),)
+  mutate(WgtAdj=NA,
+         WgtAdj=ifelse(PROB_CAT=="(1,4]",((1828/17)),WgtAdj),
+         WgtAdj=ifelse(PROB_CAT=="(4,10]",((2490/9)),WgtAdj),
+         WgtAdj=ifelse(PROB_CAT=="(10,20]",((1003/11)),WgtAdj),
+         WgtAdj=ifelse(PROB_CAT=="(20,50]",((616/13)),WgtAdj),
+         WgtAdj=ifelse(PROB_CAT==">50",((500/18)),WgtAdj))
 
 # Adjust sample weights to account for use of oversample sites
-sum(att$wgt)
-framesize_LC <- c("New York State"=68)
-
-#for some strange reason this code didn't work for me so I calculated it maually below
-#library(spsurvey)
-#att$WgtAdj <- adjwgt(rep(TRUE, nrow(att)), att$wgt, att$PROB_CAT, framesize_LC)
-
-#the equation for adjusted weight is initial weight * framesize/sum(initial weights)
-#first calculate the sum of initial weights
-initial<-att %>% 
-  select(PROB_CAT,wgt) %>% distinct() %>% 
-  mutate(WgtAdj=NA,
-         WgtAdj=ifelse(PROB_CAT=="(1,4]",17*wgt,WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(4,10]",2490*wgt,WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(10,20]",1003*wgt,WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(20,50]",616*wgt,WgtAdj),
-         WgtAdj=ifelse(PROB_CAT==">50",500*wgt,WgtAdj))
-initial<-sum(initial$WgtAdj)
-att<-att %>% 
-  mutate(WgtAdj=wgt*(68/initial))
-
+#should add up to 6437
+#############################
+#not adding up but not sure why
 sum(att$WgtAdj)
+framesize_LC <- c("New York State"=68)
 
 # Estimate TNT extent
 sites <- data.frame(siteID=att$siteID, Use=rep(TRUE, nrow(att)))
 subpop <- data.frame(siteID=att$siteID,
-                     PROB_CAT=att$PROB_CAT)
+                     PROB_CAT=att$PROB_CAT,
+                     NYS=att$STRATUM)
 design <- data.frame(siteID=att$siteID,
                      wgt=att$WgtAdj,
                      xcoord=att$xcoord,
                      ycoord=att$ycoord)
 dataTNT <- data.frame(siteID=att$siteID, StatusTNT=att$statusTNT)
-TNTextent <- cat.analysis(sites, subpop, design, dataTNT,
-                          popsize=list(PROB_CAT=framesize_LC))
+library(spsurvey)
+TNTextent <- cat.analysis(sites, subpop, design, dataTNT)
+#non target estimated at 1300 with confidence inerval is 648.10424-1953
 TNTextent
 
 # Estimate Target extent reasons
@@ -154,7 +142,32 @@ datacat <- data.frame(siteID=att$siteID,
                       phos_Trophic=att$phos_trophic,
                       chla_trophic=att$chla_trophic)
 CatExtent <- cat.analysis(sites, subpop, design, datacat)
-CatExtent
+#308 eutrophic lakes out of 2327 with 95 % confidence interval of 70-546
+#ASSUMING that the lakes we couldn't sample were random
+#therefore, 13% of NYS lakes are eutrophic assuming that the lakes we didn't sample were missing at random
+
+#quickly calculate the percentages
+totals<-CatExtent %>% filter(Category=="Total",Type=="NYS") %>% distinct() %>% select(Type,Indicator,Estimate.U) %>% rename(total=Estimate.U)
+CatExtent<-merge(CatExtent,totals,by=c('Type','Indicator'),all = TRUE)
+
+forplot<-CatExtent %>% filter(Type=="NYS") %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% distinct() %>% filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category)
+
+library(ggplot2)
+ggplot(forplot) +
+  geom_point(aes(x = Category, y = results, shape=percent))+
+  scale_shape_manual(values=c(16,3,3))+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  labs(title="Plot",y="Percent of Total",x="Trophic Status")
+
+#to consider the influence of other strata (such as depth) keep the weigths the same and define sub populations and do the same analysis
+#if we include two sub populations (see how large shallow lakes fair in trophic status) then it's sliced so thin that the confidence interval is really large
+#if eco region 1 has a similar number of lakes as ecoregion 2 then there's no value in stratifying. It's only valuable when there's a variance in # (ex votes in RI versus national)
 
 
 # Estimate continuous variables cdf

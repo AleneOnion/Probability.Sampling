@@ -1,0 +1,56 @@
+---
+title: "Distribution of the data frame sites across the major water basins"
+author: "Alene Onion and Tony Olsen of USEPA"
+date: "1/12/2021"
+output: html_document
+---
+
+```{r GlobalOptions}
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# {.tabset}
+
+The purpose of this file is to examine the distribution of the random probabilistic data frame across new york state major watersheds
+
+## Prepping data
+
+Merging relevant raw data files 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+################################################################################################################
+#reading in and formatting raw data
+################################################################################################################
+
+library(tidyverse)
+library(ggmap)
+library(ggrepel)
+library(rgdal)
+library(sp)
+library(spatialEco)
+#raw data
+sites<-read.csv("Probability_Based_Sites_2020.csv")
+
+basins<-readOGR(".","Monitoring_Basins")
+#look at column headers in attribute table
+colnames(basins@data)
+
+#change coords to web mercator for the map
+#all of our layers are NAD83 so have to convert to web mercator
+basins<-sp::spTransform(basins, sp::CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+#convert sites to a points layer and then do left join with basinss layer
+coordinates(sites)=~LON_DD83+LAT_DD83
+proj4string(sites)<-CRS("+proj=longlat")
+basins_merge<-point.in.poly(sites,basins)
+
+#convert attribute table to a data frame
+basins_data<-fortify(basins_merge@data)
+
+basins_data<-basins_data %>% group_by(M_BAS_NAME) %>% summarize(n=n()) %>% ungroup() %>% arrange(M_BAS_NAME)
+print(basins_data)
+```

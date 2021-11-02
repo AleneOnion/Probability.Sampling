@@ -1,0 +1,5 @@
+Sample_Pop,Estimate,Lower95,Upper95
+Target_No_OwnerAccess,2403,1513,3294
+Target_No_PhysicalAccess,257,26,488
+Target_Sampled,2423,1536,3310
+Non_Target,1352,615,2088

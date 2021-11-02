@@ -1,0 +1,32 @@
+---
+title: "Probability Sampling Results"
+author: "Alene Onion and Tony Olsen of USEPA"
+date: "1/12/2021"
+output: html_document
+---
+
+```{r GlobalOptions}
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# {.tabset}
+
+The purpose of this file is to examine the distribution of the random probabilistic data frame across new york state major watersheds
+
+## Prepping data
+
+Merging relevant raw data files 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+################################################################################################################
+#reading in and formatting raw data
+################################################################################################################
+
+library(tidyverse)
+
+#raw data
+sites<-read.csv("Probability_Based_Sites_2020.csv")
