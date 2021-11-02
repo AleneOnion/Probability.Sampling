@@ -30,7 +30,7 @@ Please note that these were the criteria for selecting the original data frame: 
 ################################################################################################################
 
 library(tidyverse)
-
+library(huxtable)
 #raw data
 lab<-read.csv("LCI.2020.qaqcd-2020-11.30_with_lakeID.csv")
 sites<-read.csv("Probability_Based_Sites_2020.csv")
@@ -130,18 +130,28 @@ The following code uses the sample population of target/non-target samples (NRes
 framesize_LC <- c("New York State"=68)
 
 # Estimate TNT extent
-sites <- data.frame(siteID=att$siteID, Use=rep(TRUE, nrow(att)))
-subpop <- data.frame(siteID=att$siteID,
-                     PROB_CAT=att$PROB_CAT,
-                     NYS=att$STRATUM)
-design <- data.frame(siteID=att$siteID,
-                     wgt=att$WgtAdj,
-                     xcoord=att$xcoord,
-                     ycoord=att$ycoord)
-dataTNT <- data.frame(siteID=att$siteID, StatusTNT=att$statusTNT)
+# sites <- data.frame(siteID=att$siteID, Use=rep(TRUE, nrow(att)))
+# subpop <- data.frame(siteID=att$siteID,
+#                      PROB_CAT=att$PROB_CAT,
+#                      NYS=att$STRATUM)
+# design <- data.frame(siteID=att$siteID,
+#                      wgt=att$WgtAdj,
+#                      xcoord=att$xcoord,
+#                      ycoord=att$ycoord)
+# dataTNT <- data.frame(siteID=att$siteID, StatusTNT=att$statusTNT)
 library(spsurvey)
-TNTextent <- cat.analysis(sites, subpop, design, dataTNT)
-kableExtra::kable(TNTextent %>% filter(Type=="NYS") %>% select(Category,NResp,Estimate.U,LCB95Pct.U,UCB95Pct.U))
+TNTextent <- cat_analysis(
+  dframe=att,
+  vars=c("statusTNT"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- TNTextent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+theme_plain(hux)
+
 ```
 
 This code uses the same logic to estimate the ratios in the target population that were actually sampled versus inaccessible or wetland status.
@@ -149,10 +159,19 @@ This code uses the same logic to estimate the ratios in the target population th
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
 # Estimate Target extent reasons
-sites <- data.frame(siteID=att$siteID, Use=att$statusTNT == "Target")
-dataTarget <- data.frame(siteID=att$siteID, TargetReason=att$Eval_Status)
-TargetExtent <- cat.analysis(sites, subpop, design, dataTarget)
-kableExtra::kable(TargetExtent %>% filter(Type=="NYS")  %>% select(Category,NResp,Estimate.U,LCB95Pct.U,UCB95Pct.U))
+target.att <- att[att$statusTNT=="Target",]
+# dataTarget <- data.frame(siteID=att$siteID, TargetReason=att$Eval_Status)
+TargetExtent <- TNTextent <- cat_analysis(
+  dframe=target.att,
+  vars=c("Eval_Status"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- TargetExtent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+theme_plain(hux)
 ```
 
 The conclusion is that only 1536-3310 lakes in our data frame of 6437 lakes are likely possible to sample. This is valuable to know because we always understood there are far too many lakes in NYS for us to possibly sample. This analysis indicates a large number are likely inaccessible or unsuitable and therefore the actually population we could sample is within the range that is actually possible in the 10yr sampling window.
@@ -164,25 +183,37 @@ PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasona
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
 #  Estimate assessment result
-sites <- data.frame(siteID=att$siteID, Use=att$Eval_Status == "Target_Sampled")
-datacat <- data.frame(siteID=att$siteID, 
-                      phos_Trophic=att$phos_trophic,
-                      chla_trophic=att$chla_trophic)
-CatExtent <- cat.analysis(sites, subpop, design, datacat)
+# sites <- data.frame(siteID=att$siteID, Use=att$Eval_Status == "Target_Sampled")
+CatExtent <- cat_analysis(
+  dframe=att,
+  vars=c("phos_trophic","chla_trophic"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
 
 #quickly calculate the percentages
-totals<-CatExtent %>% filter(Category=="Total",Type=="NYS") %>% distinct() %>% select(Type,Indicator,Estimate.U) %>% rename(total=Estimate.U)
-CatExtent<-merge(CatExtent,totals,by=c('Type','Indicator'),all = TRUE)
+totals<-CatExtent %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- CatExtent$Estimate.U[4]
+CatExtent<-merge(CatExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
 
-forplot<-CatExtent %>% filter(Type=="NYS") %>% 
+forplot<-CatExtent %>% 
   mutate(pct=(Estimate.U/total)*100,
          pct_lcb=(LCB95Pct.U/total)*100,
          pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% distinct() %>% filter(Category!="Total") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
-         Indicator=ifelse(Indicator=="phos_Trophic","Trophic Status from Phosphorus",Indicator))
-kableExtra::kable(forplot %>% spread(percent,results)  %>% rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb))
+         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
+
+table <- forplot %>% spread(percent,results)  %>% rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+hux <- as_hux(table)
+theme_plain(hux)
 
 library(ggplot2)
 ggplot(forplot) +
