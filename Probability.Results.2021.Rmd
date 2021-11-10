@@ -20,7 +20,7 @@ This analysis was conducted in collaboration with USEPA. Specifically, we collab
 
 ## Prepping data
 
-Merging relevant raw data files and filtering to simply trophic status
+Merging relevant raw data files and filtering
 
 Please note that these were the criteria for selecting the original data frame: restricted to waterbodies in the NHD classified as LakePond which includes reservoirs, restricted to those above 6.5 acres, within the boundaries of NYS, we further excluded wetlands by examining satellite imagery and removing sites that are more than 50% covered by emergent macrophytes
 
@@ -32,6 +32,7 @@ Please note that these were the criteria for selecting the original data frame: 
 library(tidyverse)
 library(huxtable)
 library(ggplot2)
+library(lubridate)
 
 # retrieve raw data from database
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Current")
@@ -50,23 +51,46 @@ lab<-newdata %>%
          combined,
          RSLT_RESULT_VALUE,
          RSLT_LABORATORY_QUALIFIER,
-         RSLT_VALIDATOR_QUALIFIER) %>%
+         RSLT_VALIDATOR_QUALIFIER,
+         RSLT_PROFILE_DEPTH) %>%
   mutate(RSLT_RESULT_VALUE=ifelse(!is.na(RSLT_LABORATORY_QUALIFIER)&(RSLT_LABORATORY_QUALIFIER=="U"|RSLT_LABORATORY_QUALIFIER=="UE"),"0",RSLT_RESULT_VALUE),
          RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
   filter(!is.na(RSLT_RESULT_VALUE),
-         !is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
+         is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
          combined %in% c('CHLOROPHYLL A_OW_TOTAL',
                          'PHOSPHORUS, TOTAL_OW_TOTAL',
                          "MICROCYSTIN_OW_NA",
                          "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
                          "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-                         "NITROGEN, TOTAL_OW_TOTAL")) %>%
-  select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE) %>%
-  distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,.keep_all = TRUE) %>%
+                         "NITROGEN, TOTAL_OW_TOTAL",
+                         "DISSOLVED OXYGEN_DP_NA")) %>%
+  select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
+  distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
          chemical_name=combined,
-         result_value=RSLT_RESULT_VALUE)
+         result_value=RSLT_RESULT_VALUE,
+         profile_depth=RSLT_PROFILE_DEPTH) %>%
+  # dissolved oxygen:
+  # keep DO values between 0 and 2m depth
+  mutate(keep=case_when(
+    !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "yes",
+    chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth <= 2 ~ "yes",
+    chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth > 2 ~ "no")) %>%
+  filter(keep!="no") %>%
+  select(-keep)
 
+# mean DO for each lake
+DO <- aggregate(lab$result_value,list(lab$LAKE_ID),FUN=mean)
+# add back in
+lab <- merge(lab,DO,by.x="LAKE_ID",by.y="Group.1",all.x=TRUE)
+lab$x <- as.numeric(lab$x)
+lab <- lab %>%
+  mutate(result=case_when(
+    chemical_name=="DISSOLVED OXYGEN_DP_NA" ~ x,
+    !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ result_value)) %>%
+  select(-c(result_value,profile_depth,x)) %>%
+  rename(result_value=result) %>% 
+  distinct(LAKE_ID,SAMPLE_DATE,chemical_name,.keep_all = TRUE)
 
 # read in site data
 sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
@@ -113,19 +137,19 @@ att<-att %>%
     between(`NITROGEN, TOTAL`, 0.428, 0.655) ~ "Fair",
     `NITROGEN, TOTAL`>=0.655 ~ "Poor")) %>%
   mutate(CHLA_threshold=case_when(
-    `CHLOROPHYLL A_OW_TOTAL`<=0.00452 ~ "Good",
-    between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.00452, 0.00843) ~ "Fair",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.00843 ~ "Poor")) %>%
+    `CHLOROPHYLL A_OW_TOTAL`<=4.52 ~ "Good",
+    between(`CHLOROPHYLL A_OW_TOTAL`, 4.52, 8.43) ~ "Fair",
+    `CHLOROPHYLL A_OW_TOTAL`>=8.43 ~ "Poor")) %>%
   # microcystin
   mutate(microcystin=case_when(
     is.na(`MICROCYSTIN_OW_NA`) ~"Least disturbed",
     `MICROCYSTIN_OW_NA`<8 ~ "Least disturbed",
-    `MICROCYSTIN_OW_NA`>=8 ~ "Most disturbed"))
-  # # dissolved oxygen
-  # mutate(d.oxygen=case_when(
-  #   `?`<=3 ~ "Poor",
-  #   between(`?`, 3, 5) ~ "Fair",
-  #   `?`>=5 ~ "Good"))
+    `MICROCYSTIN_OW_NA`>=8 ~ "Most disturbed")) %>%
+  # dissolved oxygen
+  mutate(d.oxygen=case_when(
+    `DISSOLVED OXYGEN_DP_NA`<=3 ~ "Poor",
+    between(`DISSOLVED OXYGEN_DP_NA`, 3, 5) ~ "Fair",
+    `DISSOLVED OXYGEN_DP_NA`>=5 ~ "Good"))
 
 ```
 
@@ -145,13 +169,19 @@ att<-att %>%
 # get duplicates (multiple samples of same lake)
 n_occur <- data.frame(table(att$FID))
 dupes <- att[att$FID %in% n_occur$Var1[n_occur$Freq > 1],]
-dupes <- unique(dupes$LAKE_ID)
 
-# remove duplicates
-n_att <- att %>% 
-  arrange(FID,desc(SAMPLE_DATE))
-n_att <- n_att[!duplicated(n_att$FID),]
-att <- n_att %>%
+# # keep most recent august sample
+m_att <- att %>%
+  mutate(keep=case_when(
+    FID %in% dupes$FID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
+    !(FID %in% dupes$FID) ~ "yes")) %>%
+  arrange(FID,desc(SAMPLE_DATE)) %>%
+  filter(keep=="yes")
+
+m_occur <- data.frame(table(m_att$FID))
+m_att <- m_att[!duplicated(m_att$FID),]
+
+att <- m_att %>%
   # remove extra columns
   select(-c('CHLOROPHYLL A_OW_TOTAL',
             'PHOSPHORUS, TOTAL_OW_TOTAL',
@@ -159,7 +189,8 @@ att <- n_att %>%
             "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
             "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
             "NITROGEN, TOTAL_OW_TOTAL",
-            "NITROGEN, TOTAL"))
+            "NITROGEN, TOTAL",
+            "DISSOLVED OXYGEN_DP_NA"))
 
 # Calculate the adjusted weights
 # The numerator is the original frame size value
@@ -167,12 +198,12 @@ att <- n_att %>%
 
 #number of lakes in each probability category
 cats <- data.frame(
-  PROB_CAT=unique(n_att$PROB_CAT),
+  PROB_CAT=unique(att$PROB_CAT),
   n=as.double(1,2,3,4,5))
 
 for(i in 1:5){
   b <- cats[i,1]
-  a <- n_att %>%
+  a <- att %>%
     filter(PROB_CAT==b)
   cats[i,2] <- nrow(a)
 }
@@ -266,9 +297,9 @@ forplot<-CatExtent %>%
   distinct() %>% 
   filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="CHLA_threshold","Trophic Status from ChlA",Indicator),
-         Indicator=ifelse(Indicator=="TP_threshold","Trophic Status from Phosphorus",Indicator),
-         Indicator=ifelse(Indicator=="TN_threshold","Trophic Status from Nitrogen",Indicator))
+  mutate(Indicator=ifelse(Indicator=="CHLA_threshold","ChlA",Indicator),
+         Indicator=ifelse(Indicator=="TP_threshold","Phosphorus",Indicator),
+         Indicator=ifelse(Indicator=="TN_threshold","Total Nitrogen",Indicator))
 
 table <- forplot %>% 
   spread(percent,results)  %>% 
@@ -286,7 +317,7 @@ ggplot(forplot) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="EPA threshold")
+  labs(title="Distribution of NYS Ponded Waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
 ```
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
@@ -356,7 +387,6 @@ MicExtent <- cat_analysis(
 totals<-MicExtent %>% 
   select(Indicator,Category,Estimate.U) %>% 
   rename(total=Estimate.U)
-totals$total <- MicExtent$Estimate.U[4]
 MicExtent<-merge(MicExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
 
 forplot<-MicExtent %>% 
@@ -386,6 +416,53 @@ ggplot(forplot) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Distribution of microcystin conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+```
+
+Below: using the number of sampled lakes in each dissolved oxygen condition category to estimate the ratio of the 2423 lakes we could have sampled that are in each EPA condition cateogry. 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+#  Estimate assessment result
+DOextent <- cat_analysis(
+  dframe=att,
+  vars=c("d.oxygen"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-DOextent %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- DOextent$Estimate.U[4]
+DOextent<-merge(DOextent,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot<-DOextent %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) 
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+forplot$Category <- factor(forplot$Category, levels=c("Good","Fair","Poor"))
+
+ggplot(forplot) +
+  geom_point(aes(x = Category, y = results, shape=percent))+
+  scale_shape_manual(values=c(16,3,3))+
+  theme(legend.position = "none")+
+  ylim(0,100)+
+  labs(title="Distribution of dissolved oxygen conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 ```
 
 ## Comparison to LMAS Samples
