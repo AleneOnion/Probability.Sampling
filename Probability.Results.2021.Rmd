@@ -116,24 +116,17 @@ att<-att %>%
     `CHLOROPHYLL A_OW_TOTAL`<=0.00452 ~ "Good",
     between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.00452, 0.00843) ~ "Fair",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.00843 ~ "Poor")) %>%
-  # # microcystin
-  # mutate(microcystin=case_when(
-  #   `MICROCYSTIN_OW_NA`<=0.1 ~ "Below MDL",
-  #   between(`MICROCYSTIN_OW_NA`, 0.1, 8) ~ "Below threshold",
-  #   `MICROCYSTIN_OW_NA`>=8 ~ "Above threshold")) %>%
+  # microcystin
+  mutate(microcystin=case_when(
+    is.na(`MICROCYSTIN_OW_NA`) ~"Least disturbed",
+    `MICROCYSTIN_OW_NA`<8 ~ "Least disturbed",
+    `MICROCYSTIN_OW_NA`>=8 ~ "Most disturbed"))
   # # dissolved oxygen
   # mutate(d.oxygen=case_when(
   #   `?`<=3 ~ "Poor",
   #   between(`?`, 3, 5) ~ "Fair",
   #   `?`>=5 ~ "Good"))
-  # remove extra columns
-  select(-c('CHLOROPHYLL A_OW_TOTAL',
-            'PHOSPHORUS, TOTAL_OW_TOTAL',
-            "MICROCYSTIN_OW_NA",
-            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-            "NITROGEN, TOTAL_OW_TOTAL",
-            "NITROGEN, TOTAL"))
+
 ```
 
 ## Analysis
@@ -158,7 +151,15 @@ dupes <- unique(dupes$LAKE_ID)
 n_att <- att %>% 
   arrange(FID,desc(SAMPLE_DATE))
 n_att <- n_att[!duplicated(n_att$FID),]
-att <- n_att
+att <- n_att %>%
+  # remove extra columns
+  select(-c('CHLOROPHYLL A_OW_TOTAL',
+            'PHOSPHORUS, TOTAL_OW_TOTAL',
+            "MICROCYSTIN_OW_NA",
+            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL"))
 
 # Calculate the adjusted weights
 # The numerator is the original frame size value
@@ -213,7 +214,6 @@ theme_plain(hux)
 ```
 
 This code uses the same logic to estimate the ratios in the target population that were actually sampled versus inaccessible or wetland status.
-
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
 # Estimate Target extent reasons
@@ -286,6 +286,55 @@ ggplot(forplot) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="EPA threshold")
+```
+
+Below: using the number of sampled lakes in each microcystin condition category to estimate the ratio of the 2423 lakes we could have sampled that are least or most disturbed. 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+#  Estimate assessment result
+MicExtent <- cat_analysis(
+  dframe=att,
+  vars=c("microcystin"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-MicExtent %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- MicExtent$Estimate.U[4]
+MicExtent<-merge(MicExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot<-MicExtent %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="microcystin","Microsystin (detected) condition category",Indicator))
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+forplot$Category <- factor(forplot$Category, levels=c("Least disturbed","Most disturbed"))
+
+ggplot(forplot) +
+  geom_point(aes(x = Category, y = results, shape=percent))+
+  scale_shape_manual(values=c(16,3,3))+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of microcystin conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 ```
 
 ## Comparison to LMAS Samples
