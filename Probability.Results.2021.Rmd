@@ -389,7 +389,7 @@ totals<-MicExtent %>%
   rename(total=Estimate.U)
 MicExtent<-merge(MicExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
 
-forplot<-MicExtent %>% 
+forplot3<-MicExtent %>% 
   mutate(pct=(Estimate.U/total)*100,
          pct_lcb=(LCB95Pct.U/total)*100,
          pct_ucb=(UCB95Pct.U/total)*100) %>% 
@@ -438,7 +438,7 @@ totals<-DOextent %>%
 totals$total <- DOextent$Estimate.U[4]
 DOextent<-merge(DOextent,totals,by=c('Indicator','Category'),all.x = TRUE)
 
-forplot<-DOextent %>% 
+forplot3<-DOextent %>% 
   mutate(pct=(Estimate.U/total)*100,
          pct_lcb=(LCB95Pct.U/total)*100,
          pct_ucb=(UCB95Pct.U/total)*100) %>% 
@@ -447,7 +447,7 @@ forplot<-DOextent %>%
   filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) 
 
-table <- forplot %>% 
+table <- forplot3 %>% 
   spread(percent,results)  %>% 
   rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
 
@@ -455,9 +455,9 @@ hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
 
-forplot$Category <- factor(forplot$Category, levels=c("Good","Fair","Poor"))
+forplot3$Category <- factor(forplot3$Category, levels=c("Good","Fair","Poor"))
 
-ggplot(forplot) +
+ggplot(forplot3) +
   geom_point(aes(x = Category, y = results, shape=percent))+
   scale_shape_manual(values=c(16,3,3))+
   theme(legend.position = "none")+
@@ -507,16 +507,7 @@ NOTE: used ecoregion analysis to generate the LMAS numbers. These are the most r
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 
-forplot2<-CatExtent2 %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total") %>% 
-  gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
-         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))%>% 
+forplot4<-forplot2 %>% 
   spread(percent,results) %>% 
   rename(percent=pct) %>% 
   mutate(study="probability") %>% 
@@ -548,7 +539,7 @@ forplot2<-CatExtent2 %>%
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
 
-ggplot(forplot2, aes(x=Category,fill=study)) +
+ggplot(forplot4, aes(x=Category,fill=study)) +
   geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
   geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.2,
                  position=position_dodge(.9))+
@@ -556,7 +547,150 @@ ggplot(forplot2, aes(x=Category,fill=study)) +
   labs(title="Trophic Classes in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="Trophic Classes")
 ```
 
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 
+lab<-newdata %>%
+  filter(SAMPLE_DATE>'2010-01-01') %>% 
+  mutate(combined=paste(CHARACTERISTIC_NAME,
+                        INFORMATION_TYPE,
+                        RSLT_RESULT_SAMPLE_FRACTION,
+                        sep = "_"))  %>%
+  select(LAKE_HISTORY_ID,
+         SAMPLE_DATE,
+         combined,
+         RSLT_RESULT_VALUE,
+         RSLT_LABORATORY_QUALIFIER,
+         RSLT_VALIDATOR_QUALIFIER) %>%
+  mutate(RSLT_RESULT_VALUE=ifelse(!is.na(RSLT_LABORATORY_QUALIFIER)&(RSLT_LABORATORY_QUALIFIER=="U"|RSLT_LABORATORY_QUALIFIER=="UE"),"0",RSLT_RESULT_VALUE),
+         RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
+  filter(!is.na(RSLT_RESULT_VALUE),
+         is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
+         combined %in% c('CHLOROPHYLL A_OW_TOTAL',
+                         'PHOSPHORUS, TOTAL_OW_TOTAL',
+                         "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+                         "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+                         "NITROGEN, TOTAL_OW_TOTAL")) %>%
+  select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE) %>%
+  distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,.keep_all = TRUE) %>%
+  rename(LAKE_ID=LAKE_HISTORY_ID,
+         chemical_name=combined,
+         result_value=RSLT_RESULT_VALUE)
+
+n_att<-lab %>% spread(chemical_name,result_value,fill = NA) 
+n_att<-n_att %>% 
+  # create total nitrogen
+  mutate(`NITROGEN, TOTAL`=case_when(
+    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
+      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
+    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
+  # trophic status
+  mutate(phos_trophic=case_when(
+    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
+    between(`PHOSPHORUS, TOTAL_OW_TOTAL`,0.01,0.02) ~ "mesotrophic",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.02 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    `CHLOROPHYLL A_OW_TOTAL`<=2 ~ "oligotrophic",
+    between(`CHLOROPHYLL A_OW_TOTAL`,2,8) ~ "mesotrophic",
+    `CHLOROPHYLL A_OW_TOTAL`>=8 ~ "eutrophic")) %>%
+  # EPA thresholds
+  mutate(TP_threshold=case_when(
+    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.016 ~ "Good",
+    between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.016, 0.0279) ~ "Fair",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.0279 ~ "Poor")) %>%
+  mutate(TN_threshold=case_when(
+    `NITROGEN, TOTAL`<=0.428 ~ "Good",
+    between(`NITROGEN, TOTAL`, 0.428, 0.655) ~ "Fair",
+    `NITROGEN, TOTAL`>=0.655 ~ "Poor")) %>%
+  mutate(CHLA_threshold=case_when(
+    `CHLOROPHYLL A_OW_TOTAL`<=4.52 ~ "Good",
+    between(`CHLOROPHYLL A_OW_TOTAL`, 4.52, 8.43) ~ "Fair",
+    `CHLOROPHYLL A_OW_TOTAL`>=8.43 ~ "Poor"))
+
+
+# get duplicates (multiple samples of same lake)
+n_occur <- data.frame(table(n_att$LAKE_ID))
+dupes <- n_att[n_att$LAKE_ID %in% n_occur$Var1[n_occur$Freq > 1],]
+
+# # keep most recent august sample
+o_att <- n_att %>%
+  mutate(keep=case_when(
+    LAKE_ID %in% dupes$LAKE_ID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
+    !(LAKE_ID %in% dupes$LAKE_ID) ~ "yes")) %>%
+  arrange(LAKE_ID,desc(SAMPLE_DATE)) %>%
+  filter(keep=="yes")
+
+o_occur <- data.frame(table(o_att$LAKE_ID))
+o_att <- o_att[!duplicated(o_att$LAKE_ID),]
+
+o_att <- o_att %>%
+  # remove extra columns
+  select(-c('CHLOROPHYLL A_OW_TOTAL',
+            'PHOSPHORUS, TOTAL_OW_TOTAL',
+            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL"))
+
+#number of lakes in each threshold category
+data.frame(table(o_att$TP_threshold))
+data.frame(table(o_att$TN_threshold))
+data.frame(table(o_att$CHLA_threshold))
+
+
+
+forplot5<-forplot %>% 
+  spread(percent,results) %>% 
+  rename(percent=pct) %>% 
+  mutate(study="probability") %>% 
+  add_row(Indicator="ChlA",
+          Category="Good",
+          study="LMAS",
+          percent=((306/752)*100)) %>% 
+  add_row(Indicator="ChlA",
+          Category="Fair",
+          study="LMAS",
+          percent=((144/752)*100)) %>% 
+  add_row(Indicator="ChlA",
+          Category="Poor",
+          study="LMAS",
+          percent=((302/752)*100)) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Good",
+          study="LMAS",
+          percent=((262/501)*100)) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Fair",
+          study="LMAS",
+          percent=((82/501)*100)) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Poor",
+          study="LMAS",
+          percent=((157/501)*100)) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Good",
+          study="LMAS",
+          percent=((186/441)*100)) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Fair",
+          study="LMAS",
+          percent=((108/441)*100)) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Poor",
+          study="LMAS",
+          percent=((147/441)*100)) %>% 
+  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
+         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+  
+
+forplot5$Category <- factor(forplot5$Category, levels=c("Good","Fair","Poor"))
+
+ggplot(forplot5, aes(x=Category,fill=study)) +
+  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.2,
+                 position=position_dodge(.9))+
+  facet_wrap(~Indicator,scales = "free_y")+
+  labs(title="EPA condition categories in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="EPA Condition Classes")
+```
 ## Notes for future study:
 
 To consider the influence of other strata (such as depth or ecoregion) keep the adjusted weights the same and use these categories to define sub populations. If we include two sub populations (see how large shallow lakes fair in trophic status) then it's sliced so thin that the confidence interval is really too large to be of any value. 
