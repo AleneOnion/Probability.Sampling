@@ -70,18 +70,6 @@ lab<-newdata %>%
 
 # read in site data
 sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
-
-#modify the data so it can be merged
-# lab<-lab %>% 
-#   mutate(sys_sample_code=substr(sys_sample_code,nchar(sys_sample_code),nchar(sys_sample_code))) %>% 
-#   filter(sys_sample_code!=2) %>% 
-#   mutate(chemical_name=paste(chemical_name,result_unit,sep="_"),
-#          #converting non-detects to 0
-#          result_value=ifelse(validator_qualifiers=="U",0,result_value)) %>% 
-#   select(LAKE,chemical_name,result_value) %>%  
-#   rename(LAKE_ID=LAKE)
-#rename columns
-
 sites<-sites %>% 
   rename(siteID=SITE_ID,
          xcoord=LON_DD83,
@@ -91,18 +79,17 @@ sites<-sites %>%
   filter(Eval_Status!="") %>% 
   mutate(Eval_Status=trimws(Eval_Status))
 
-#now restrict to only the data in the probability study and spread the data
+# restrict to only the data in the probability study and spread the data
 att<-merge(sites,lab,by=c('LAKE_ID'),all.x = TRUE)
 att<-att %>% spread(chemical_name,result_value,fill = NA) %>% 
-  #removing an NA column
+  # removing an NA column
   select(-`<NA>`) 
 
-#selecting parameters and adding trophic status
-
+# selecting parameters and adding trophic status
 att<-att %>% 
-  #remove fields in the sites table that aren't relevant
+  # remove fields in the sites table that aren't relevant
   select(-Accessible,-Comments,-Contact,-STATUS) %>%
-  #create total nitrogen
+  # create total nitrogen
   mutate(`NITROGEN, TOTAL`=case_when(
     !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
       (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
@@ -129,16 +116,17 @@ att<-att %>%
     `CHLOROPHYLL A_OW_TOTAL`<=0.00452 ~ "Good",
     between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.00452, 0.00843) ~ "Fair",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.00843 ~ "Poor")) %>%
-  #microcystin
+  # # microcystin
   # mutate(microcystin=case_when(
   #   `MICROCYSTIN_OW_NA`<=0.1 ~ "Below MDL",
   #   between(`MICROCYSTIN_OW_NA`, 0.1, 8) ~ "Below threshold",
   #   `MICROCYSTIN_OW_NA`>=8 ~ "Above threshold")) %>%
-  # #dissolved oxygen
+  # # dissolved oxygen
   # mutate(d.oxygen=case_when(
   #   `?`<=3 ~ "Poor",
   #   between(`?`, 3, 5) ~ "Fair",
   #   `?`>=5 ~ "Good"))
+  # remove extra columns
   select(-c('CHLOROPHYLL A_OW_TOTAL',
             'PHOSPHORUS, TOTAL_OW_TOTAL',
             "MICROCYSTIN_OW_NA",
@@ -161,19 +149,22 @@ att<-att %>%
   mutate(statusTNT="Target",
          statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
 
-#get duplicates (multiple samples of same lake)
+# get duplicates (multiple samples of same lake)
 n_occur <- data.frame(table(att$FID))
 dupes <- att[att$FID %in% n_occur$Var1[n_occur$Freq > 1],]
 dupes <- unique(dupes$LAKE_ID)
 
+# remove duplicates
 n_att <- att %>% 
   arrange(FID,desc(SAMPLE_DATE))
 n_att <- n_att[!duplicated(n_att$FID),]
+att <- n_att
 
-#Calculate the adjusted weights
-#The numerator is the original frame size value
-#the denominator is the actual number of samples evaluated in each category
+# Calculate the adjusted weights
+# The numerator is the original frame size value
+# the denominator is the actual number of samples evaluated in each category
 
+#number of lakes in each probability category
 cats <- data.frame(
   PROB_CAT=unique(n_att$PROB_CAT),
   n=as.double(1,2,3,4,5))
@@ -185,8 +176,7 @@ for(i in 1:5){
   cats[i,2] <- nrow(a)
 }
 
-att <- n_att
-
+# add adjusted weight variable
 att<-att %>% 
   mutate(WgtAdj=case_when(
          PROB_CAT=="(1,4]"~(1828/29),
@@ -195,7 +185,7 @@ att<-att %>%
          PROB_CAT=="(20,50]"~(616/21),
          PROB_CAT==">50"~(500/33)))
 
-#should add up to 6437
+# should add up to 6437
 print(sum(att$WgtAdj))
 ```
 
