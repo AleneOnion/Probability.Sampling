@@ -1,6 +1,6 @@
 ---
 title: "Probability Sampling Results 2021"
-author: "Sabrina Xie and Alene Onion and Tony Olsen of USEPA"
+author: "Alene Onion and Tony Olsen of USEPA (updated by Sabrina Xie)"
 date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
 output: html_document
 ---
@@ -55,7 +55,12 @@ lab<-newdata %>%
          RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
   filter(!is.na(RSLT_RESULT_VALUE),
          !is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
-         combined %in% c('CHLOROPHYLL A_OW_TOTAL','PHOSPHORUS, TOTAL_OW_TOTAL',"MICROCYSTIN_OW_NA","NITROGEN, NITRATE-NITRITE_OW_TOTAL")) %>%
+         combined %in% c('CHLOROPHYLL A_OW_TOTAL',
+                         'PHOSPHORUS, TOTAL_OW_TOTAL',
+                         "MICROCYSTIN_OW_NA",
+                         "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+                         "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+                         "NITROGEN, TOTAL_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -96,7 +101,12 @@ att<-att %>% spread(chemical_name,result_value,fill = NA) %>%
 
 att<-att %>% 
   #remove fields in the sites table that aren't relevant
-  select(-Accessible,-Comments,-Contact,-STATUS) %>% 
+  select(-Accessible,-Comments,-Contact,-STATUS) %>%
+  #create total nitrogen
+  mutate(`NITROGEN, TOTAL`=case_when(
+    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
+      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
+    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
   # trophic status
   mutate(phos_trophic=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
@@ -112,23 +122,30 @@ att<-att %>%
     between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.016, 0.0279) ~ "Fair",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.0279 ~ "Poor")) %>%
   mutate(TN_threshold=case_when(
-    `NITROGEN, NITRATE-NITRITE_OW_TOTAL`<=0.428 ~ "Good",
-    between(`NITROGEN, NITRATE-NITRITE_OW_TOTAL`, 0.428, 0.655) ~ "Fair",
-    `NITROGEN, NITRATE-NITRITE_OW_TOTAL`>=0.655 ~ "Poor")) %>%
+    `NITROGEN, TOTAL`<=0.428 ~ "Good",
+    between(`NITROGEN, TOTAL`, 0.428, 0.655) ~ "Fair",
+    `NITROGEN, TOTAL`>=0.655 ~ "Poor")) %>%
   mutate(CHLA_threshold=case_when(
     `CHLOROPHYLL A_OW_TOTAL`<=0.00452 ~ "Good",
     between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.00452, 0.00843) ~ "Fair",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.00843 ~ "Poor")) %>%
   #microcystin
-  mutate(microcystin=case_when(
-    `MICROCYSTIN_OW_NA`<=0.1 ~ "Below MDL",
-    between(`MICROCYSTIN_OW_NA`, 0.1, 8) ~ "Below thresholdd",
-    `MICROCYSTIN_OW_NA`>=8 ~ "Above threshold")) %>%
-  #dissolved oxygen
-  mutate(d.oxygen=case_when(
-    `?`<=3 ~ "Poor",
-    between(`?`, 3, 5) ~ "Fair",
-    `?`>=5 ~ "Good"))
+  # mutate(microcystin=case_when(
+  #   `MICROCYSTIN_OW_NA`<=0.1 ~ "Below MDL",
+  #   between(`MICROCYSTIN_OW_NA`, 0.1, 8) ~ "Below threshold",
+  #   `MICROCYSTIN_OW_NA`>=8 ~ "Above threshold")) %>%
+  # #dissolved oxygen
+  # mutate(d.oxygen=case_when(
+  #   `?`<=3 ~ "Poor",
+  #   between(`?`, 3, 5) ~ "Fair",
+  #   `?`>=5 ~ "Good"))
+  select(-c('CHLOROPHYLL A_OW_TOTAL',
+            'PHOSPHORUS, TOTAL_OW_TOTAL',
+            "MICROCYSTIN_OW_NA",
+            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL"))
 ```
 
 ## Analysis
@@ -171,12 +188,12 @@ for(i in 1:5){
 att <- n_att
 
 att<-att %>% 
-  mutate(WgtAdj=NA,
-         WgtAdj=ifelse(PROB_CAT=="(1,4]",((1828/29)),WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(4,10]",((2490/15)),WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(10,20]",((1003/18)),WgtAdj),
-         WgtAdj=ifelse(PROB_CAT=="(20,50]",((616/21)),WgtAdj),
-         WgtAdj=ifelse(PROB_CAT==">50",((500/33)),WgtAdj))
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/21),
+         PROB_CAT==">50"~(500/33)))
 
 #should add up to 6437
 print(sum(att$WgtAdj))
