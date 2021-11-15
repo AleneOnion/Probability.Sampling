@@ -142,8 +142,8 @@ att<-att %>%
     `CHLOROPHYLL A_OW_TOTAL`>=8.43 ~ "Poor")) %>%
   # microcystin
   mutate(microcystin=case_when(
-    is.na(`MICROCYSTIN_OW_NA`) ~"Least disturbed",
-    `MICROCYSTIN_OW_NA`<8 ~ "Least disturbed",
+    is.na(`MICROCYSTIN_OW_NA`) ~"Non-detect",
+    `MICROCYSTIN_OW_NA`<8 ~ "Microcystin Detected",
     `MICROCYSTIN_OW_NA`>=8 ~ "Most disturbed")) %>%
   # dissolved oxygen
   mutate(d.oxygen=case_when(
@@ -398,7 +398,7 @@ forplot3<-MicExtent %>%
   distinct() %>% 
   filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="microcystin","Microsystin (detected) condition category",Indicator))
+  mutate(Indicator=ifelse(Indicator=="microcystin","Microsystin condition category",Indicator))
 
 table <- forplot3 %>% 
   spread(percent,results)  %>% 
@@ -408,7 +408,7 @@ hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
 
-table$Category <- factor(table$Category, levels=c("Least disturbed","Most disturbed"))
+table$Category <- factor(table$Category, levels=c("Non-detect","Microcystin disturbed"))
 
 ggplot(table,aes(x=Category,y=Percentage)) +
   geom_point()+
