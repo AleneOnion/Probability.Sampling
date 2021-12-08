@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 # {.tabset}
-Doing the probability sampling results analysis with NLA data of lakes with area >6.5 acres
+Doing the probability sampling results analysis with NLA data of lakes in Eastern Highlands with area >6.5 acres
 
 ## Prepping data
 
@@ -66,22 +66,23 @@ oxygen <- oxygen %>%
 
 sites <- read.csv("nla_2017_site_information-data.csv")
 
-cats.full <- data.frame(
+sites <- sites %>% 
+  filter(AREA_HA>2.63,
+         AG_ECO3 == "EHIGH") %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
+  rename(xcoord=LAT_DD83,
+         ycoord=LON_DD83)
+
+cats <- data.frame(
   AREA_CAT6=unique(sites$AREA_CAT6),
   n=as.double(1,2,3,4,5))
 
 for(i in 1:5){
-  b <- cats.full[i,1]
-  a <- att %>%
+  b <- cats[i,1]
+  a <- sites %>%
     filter(AREA_CAT6==b)
-  cats.full[i,2] <- nrow(a)
+  cats[i,2] <- nrow(a)
 }
-
-sites <- sites %>% 
-  filter(AREA_HA>2.63) %>% 
-  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
-  rename(xcoord=LAT_DD83,
-         ycoord=LON_DD83)
 
 att <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
 att <- merge(att,sites,by=c("UID","SITE_ID"))
@@ -95,12 +96,12 @@ att$OXYGEN <- as.numeric(att$OXYGEN)
 att<-att %>% 
   # EPA thresholds
   mutate(TP_threshold=case_when(
-    TP<=0.016 ~ "Good",
+    TP<=16 ~ "Good",
     between(TP, 16, 27.9) ~ "Fair",
-    TP>=0.0279 ~ "Poor")) %>%
+    TP>=27.9 ~ "Poor")) %>%
   mutate(TN_threshold=case_when(
     TN<=0.428 ~ "Good",
-    between(TN, 428, 655) ~ "Fair",
+    between(TN, 0.428, 0.655) ~ "Fair",
     TN>=0.655 ~ "Poor")) %>%
   mutate(CHLA_threshold=case_when(
     CHLA<=4.52 ~ "Good",
@@ -119,8 +120,6 @@ att<-att %>%
 The start of the NYSAnalysis code from Tony Olsen
 
 The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
-
-PLEASE NOTE: the samples evaluated included the lakes that were actually sampled as well as the lakes which could not be sampled due to wetland status or access issues. After adjusting the weights, they should add up to the original frame size of 6437:
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
 
@@ -143,21 +142,21 @@ for(i in 1:5){
 # add adjusted weight variable
 att<-att %>% 
   mutate(WgtAdj=case_when(
-         AREA_CAT6=="(1,4]"~(67/67),
-         AREA_CAT6=="(4,10]"~(188/188),
-         AREA_CAT6=="(10,20]"~(211/211),
-         AREA_CAT6=="(20,50]"~(237/237),
-         AREA_CAT6==">50"~(357/357)))
+         AREA_CAT6=="(1,4]"~(40/10),
+         AREA_CAT6=="(4,10]"~(96/26),
+         AREA_CAT6=="(10,20]"~(115/48),
+         AREA_CAT6=="(20,50]"~(105/56),
+         AREA_CAT6==">50"~(134/85)))
 
 print(sum(att$WgtAdj))
 
-framesize_LC <- c("EPA"=1060) 
+framesize_LC <- c("EPA"=490) 
 
 ```
 
 ## Comparison to NLA thresholds
 
-The following code performs the analysis against EPA's condition thresholds as used in the National Lakes Assessments. It uses the number of sampled lakes in each condition category (for total phosphorus, total nitrogen and chlorophyll) to estimate the ratio of the 2583 lakes we could have sampled are in good, fair and poor condition.
+The following code performs the analysis against EPA's condition thresholds as used in the National Lakes Assessments. It uses the number of sampled lakes in each condition category (for total phosphorus, total nitrogen and chlorophyll) to estimate the ratio of all lakes in good, fair and poor condition.
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
 
@@ -174,17 +173,10 @@ CatExtent <- cat_analysis(
   xcoord = "xcoord",
   ycoord = "ycoord")
 
-#quickly calculate the percentages
-totals<-CatExtent %>% 
-  select(Indicator,Category,Estimate.U) %>% 
-  rename(total=Estimate.U)
-totals$total <- CatExtent$Estimate.U[4]
-CatExtent<-merge(CatExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
-
 forplot<-CatExtent %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
   filter(Category!="Total") %>% 
@@ -209,59 +201,8 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of NYS Ponded Waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
+  labs(title="Distribution of Adirondack Ponded Waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
 ```
-
-
-Below the same analysis is performed using the number of sampled lakes in each microcystin condition category to estimate the ratio of the 2583 lakes we could have sampled that are least or most disturbed. All lakes were non-detects for microcystin. 
-
-```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-# Microcystin
-#  Estimate assessment result
-MicExtent <- cat_analysis(
-  dframe=att,
-  vars=c("microcystin"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-
-#quickly calculate the percentages
-totals<-MicExtent %>% 
-  select(Indicator,Category,Estimate.U) %>% 
-  rename(total=Estimate.U)
-MicExtent<-merge(MicExtent,totals,by=c('Indicator','Category'),all.x = TRUE)
-
-forplot3<-MicExtent %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total") %>% 
-  gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="microcystin","Microsystin condition category",Indicator))
-
-table <- forplot3 %>% 
-  spread(percent,results)  %>% 
-  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
-
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-table$Category <- factor(table$Category, levels=c("Non-detect","Microcystin disturbed"))
-
-ggplot(table,aes(x=Category,y=Percentage)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Distribution of microcystin conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
-```
-
 
 Below, the analysis is done for each dissolved oxygen condition category.
 
@@ -272,7 +213,7 @@ DOextent <- cat_analysis(
   dframe=att,
   vars=c("d.oxygen"),
   subpops = ,
-  siteID = "siteID",
+  siteID = "SITE_ID",
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
@@ -285,9 +226,9 @@ totals$total <- DOextent$Estimate.U[4]
 DOextent<-merge(DOextent,totals,by=c('Indicator','Category'),all.x = TRUE)
 
 forplot4<-DOextent %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
   filter(Category!="Total") %>% 
@@ -310,21 +251,26 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of dissolved oxygen conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+  labs(title="Distribution of dissolved oxygen conditions across Adirondack Ponded Waters",y="Percent of Total",x="Condition category")
 ```
 
-## Comparison to LMAS Samples
-
-A plot below shows the distribution of the size classes included in the data frame. For comparison, I've plotted the proportion of NYS lakes sampled in each size class since 2010.
+## Comparison to NY probability and LMAS
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 #Plotting data frame distribution as well as NYS sample distribution collected since 2010
 #LMAS numbers retrieved in 2020
 
 frame<-att %>% 
-  select(PROB_CAT,AREA_CAT) %>% 
-  rename(size_category=AREA_CAT) %>% 
+  select(AREA_CAT6) %>% 
+  rename(size_category=AREA_CAT6) %>% 
   distinct() %>%
+  mutate(NLA_Sites = case_when(
+    endsWith(size_category, "(1,4]") ~ ((40/490)*100),
+    endsWith(size_category, "(4,10]") ~ ((96/490)*100),
+    endsWith(size_category, "(10,20]") ~ ((115/490)*100),
+    endsWith(size_category, "(20,50]") ~ ((105/490)*100),
+    endsWith(size_category, ">50") ~ ((134/490)*100))
+  ) %>%
   mutate(Probability_Sites = case_when(
     endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
     endsWith(size_category, "(4,10]") ~ ((2490/6437)*100),
@@ -340,7 +286,6 @@ frame<-att %>%
     endsWith(size_category, ">50") ~ (40.1)
   )) %>%
   ungroup() %>%
-  select(-PROB_CAT) %>% 
   gather(study,percentage,-size_category) %>% 
   arrange(study,size_category) %>% 
   mutate(percentage=as.numeric(percentage),
@@ -349,181 +294,18 @@ frame<-att %>%
 ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
   geom_bar(stat = "identity", position = position_dodge())+
   ylim(0,100)+
-  labs(title="Size classes in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="Size Category (hectares)")
-```
+  labs(title="Size classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Size Category (hectares)")
 
-And the following plot shows the comparison of trophic distributions among LMAS most recent august samples since 2010 compared to the probability drawn samples.
-NOTE: used ecoregion analysis to generate the LMAS numbers. These are the most recent August sample collected from each lake sampled since 2010 (a total of 473 unique lakes were sampled since 2010).
 
-```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
-
-forplot5<-forplot2 %>% 
-  spread(percent,results) %>% 
-  rename(percent=pct) %>% 
-  mutate(study="probability") %>% 
-  add_row(Indicator="Trophic Status from ChlA",
-          Category="eutrophic",
-          study="LMAS",
-          percent=((215/473)*100)) %>% 
-  add_row(Indicator="Trophic Status from ChlA",
-          Category="mesotrophic",
-          study="LMAS",
-          percent=((182/473)*100)) %>% 
-  add_row(Indicator="Trophic Status from ChlA",
-          Category="oligotrophic",
-          study="LMAS",
-          percent=((76/473)*100)) %>% 
-  add_row(Indicator="Trophic Status from Phosphorus",
-          Category="eutrophic",
-          study="LMAS",
-          percent=((211/473)*100)) %>% 
-  add_row(Indicator="Trophic Status from Phosphorus",
-          Category="mesotrophic",
-          study="LMAS",
-          percent=((141/473)*100)) %>% 
-  add_row(Indicator="Trophic Status from Phosphorus",
-          Category="oligotrophic",
-          study="LMAS",
-          percent=((121/473)*100)) %>% 
-  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
-         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
-  
-
-ggplot(forplot5, aes(x=Category,fill=study)) +
-  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
-  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
-                 position=position_dodge(.9))+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)
-  labs(title="Trophic Classes in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="Trophic Classes")
 ```
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
-
-# retrieve LMAS data in 2021 and count frequency of observations in each condition category
-# lab2<-newdata %>%
-#   filter(SAMPLE_DATE>'2010-01-01') %>%
-#   mutate(combined=paste(CHARACTERISTIC_NAME,
-#                         INFORMATION_TYPE,
-#                         RSLT_RESULT_SAMPLE_FRACTION,
-#                         sep = "_"))  %>%
-#   select(LAKE_HISTORY_ID,
-#          SAMPLE_DATE,
-#          combined,
-#          RSLT_RESULT_VALUE,
-#          RSLT_LABORATORY_QUALIFIER,
-#          RSLT_VALIDATOR_QUALIFIER,
-#          RSLT_PROFILE_DEPTH) %>%
-#   mutate(RSLT_RESULT_VALUE=ifelse(!is.na(RSLT_LABORATORY_QUALIFIER)&(RSLT_LABORATORY_QUALIFIER=="U"|RSLT_LABORATORY_QUALIFIER=="UE"),"0",RSLT_RESULT_VALUE),
-#          RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
-#   filter(!is.na(RSLT_RESULT_VALUE),
-#          is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
-#          combined %in% c('CHLOROPHYLL A_OW_TOTAL',
-#                          'PHOSPHORUS, TOTAL_OW_TOTAL',
-#                          "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-#                          "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-#                          "NITROGEN, TOTAL_OW_TOTAL",
-#                          "DISSOLVED OXYGEN_DP_NA")) %>%
-#   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
-#   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
-#   rename(LAKE_ID=LAKE_HISTORY_ID,
-#          chemical_name=combined,
-#          result_value=RSLT_RESULT_VALUE,
-#          profile_depth=RSLT_PROFILE_DEPTH) %>%
-#   # dissolved oxygen:
-#   # keep DO values between 0 and 2m depth
-#   mutate(keep=case_when(
-#     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "yes",
-#     chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth <= 2 ~ "yes",
-#     chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth > 2 ~ "no")) %>%
-#   filter(keep!="no") %>%
-#   select(-keep)
-# 
-# # mean DO for each lake
-# DO <- aggregate(lab2$result_value,list(lab2$LAKE_ID),FUN=mean)
-# # add back in
-# lab2 <- merge(lab2,DO,by.x="LAKE_ID",by.y="Group.1",all.x=TRUE)
-# lab2$x <- as.numeric(lab2$x)
-# lab2 <- lab2 %>%
-#   mutate(result=case_when(
-#     chemical_name=="DISSOLVED OXYGEN_DP_NA" ~ x,
-#     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ result_value)) %>%
-#   select(-c(result_value,profile_depth,x)) %>%
-#   rename(result_value=result) %>% 
-#   distinct(LAKE_ID,SAMPLE_DATE,chemical_name,.keep_all = TRUE)
-# 
-# n_att<-lab2 %>% spread(chemical_name,result_value,fill = NA)
-# n_att<-n_att %>%
-#   # create total nitrogen
-#   mutate(`NITROGEN, TOTAL`=case_when(
-#     !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
-#       (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
-#     is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
-#   # trophic status
-#   mutate(phos_trophic=case_when(
-#     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
-#     between(`PHOSPHORUS, TOTAL_OW_TOTAL`,0.01,0.02) ~ "mesotrophic",
-#     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.02 ~ "eutrophic")) %>%
-#   mutate(chla_trophic=case_when(
-#     `CHLOROPHYLL A_OW_TOTAL`<=2 ~ "oligotrophic",
-#     between(`CHLOROPHYLL A_OW_TOTAL`,2,8) ~ "mesotrophic",
-#     `CHLOROPHYLL A_OW_TOTAL`>=8 ~ "eutrophic")) %>%
-#   # EPA thresholds
-#   mutate(TP_threshold=case_when(
-#     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.016 ~ "Good",
-#     between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.016, 0.0279) ~ "Fair",
-#     `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.0279 ~ "Poor")) %>%
-#   mutate(TN_threshold=case_when(
-#     `NITROGEN, TOTAL`<=0.428 ~ "Good",
-#     between(`NITROGEN, TOTAL`, 0.428, 0.655) ~ "Fair",
-#     `NITROGEN, TOTAL`>=0.655 ~ "Poor")) %>%
-#   mutate(CHLA_threshold=case_when(
-#     `CHLOROPHYLL A_OW_TOTAL`<=4.52 ~ "Good",
-#     between(`CHLOROPHYLL A_OW_TOTAL`, 4.52, 8.43) ~ "Fair",
-#     `CHLOROPHYLL A_OW_TOTAL`>=8.43 ~ "Poor")) %>%
-#   # dissolved oxygen
-#   mutate(d.oxygen=case_when(
-#     `DISSOLVED OXYGEN_DP_NA`<=3 ~ "Poor",
-#     between(`DISSOLVED OXYGEN_DP_NA`, 3, 5) ~ "Fair",
-#     `DISSOLVED OXYGEN_DP_NA`>=5 ~ "Good"))
-# 
-# 
-# # get duplicates (multiple samples of same lake)
-# n_occur <- data.frame(table(n_att$LAKE_ID))
-# dupes <- n_att[n_att$LAKE_ID %in% n_occur$Var1[n_occur$Freq > 1],]
-# 
-# # # keep most recent august sample
-# o_att <- n_att %>%
-#   mutate(keep=case_when(
-#     LAKE_ID %in% dupes$LAKE_ID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
-#     !(LAKE_ID %in% dupes$LAKE_ID) ~ "yes")) %>%
-#   arrange(LAKE_ID,desc(SAMPLE_DATE)) %>%
-#   filter(keep=="yes")
-# 
-# o_occur <- data.frame(table(o_att$LAKE_ID))
-# o_att <- o_att[!duplicated(o_att$LAKE_ID),]
-# 
-# o_att <- o_att %>%
-#   # remove extra columns
-#   select(-c('CHLOROPHYLL A_OW_TOTAL',
-#             'PHOSPHORUS, TOTAL_OW_TOTAL',
-#             "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-#             "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-#             "NITROGEN, TOTAL_OW_TOTAL",
-#             "NITROGEN, TOTAL"))
-# 
-# #number of lakes in each threshold category
-# data.frame(table(o_att$TP_threshold))
-# data.frame(table(o_att$TN_threshold))
-# data.frame(table(o_att$CHLA_threshold))
-# data.frame(table(o_att$d.oxygen))
-
 
 forplot6<-forplot %>% 
   spread(percent,results) %>% 
   rename(percent=pct) %>% 
-  mutate(study="probability") %>% 
-  add_row(Indicator="ChlA",
+  mutate(study="NLA") %>% 
+  add_row(Indicator="ChlA", #lmas results
           Category="Good",
           study="LMAS",
           percent=((306/752)*100)) %>% 
@@ -559,6 +341,60 @@ forplot6<-forplot %>%
           Category="Poor",
           study="LMAS",
           percent=((147/441)*100)) %>% 
+  add_row(Indicator="ChlA", #nys prob results
+          Category="Good",
+          study="NYProb",
+          percent=44.82,
+          pct_lcb=29.56,
+          pct_ucb=60.08) %>% 
+  add_row(Indicator="ChlA",
+          Category="Fair",
+          study="NYProb",
+          percent=33.57,
+          pct_lcb=12.23,
+          pct_ucb=54.91) %>% 
+  add_row(Indicator="ChlA",
+          Category="Poor",
+          study="NYProb",
+          percent=8.16,
+          pct_lcb=2.55,
+          pct_ucb=13.76) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Good",
+          study="NYProb",
+          percent=67.55,
+          pct_lcb=43.96,
+          pct_ucb=91.14) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Fair",
+          study="NYProb",
+          percent=12.96,
+          pct_lcb=4.48,
+          pct_ucb=21.44) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Poor",
+          study="NYProb",
+          percent=19.49,
+          pct_lcb=6.29,
+          pct_ucb=32.69) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Good",
+          study="NYProb",
+          percent=44.45,
+          pct_lcb=26.84,
+          pct_ucb=62.06) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Fair",
+          study="NYProb",
+          percent=7.74,
+          pct_lcb=1.76,
+          pct_ucb=13.73) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Poor",
+          study="NYProb",
+          percent=17.1,
+          pct_lcb=5.02,
+          pct_ucb=29.17) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
@@ -571,15 +407,15 @@ ggplot(forplot6, aes(x=Category,fill=study)) +
                  position=position_dodge(.9))+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="EPA condition categories in  Probability Study vs. LMAS samples since 2010",y="Percent of Total",x="EPA Condition Classes")
+  labs(title="EPA condition categories in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="EPA Condition Classes")
 ```
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 forplot7<-forplot4 %>% 
   spread(percent,results) %>% 
   rename(percent=pct) %>% 
-  mutate(study="probability") %>% 
-  add_row(Indicator="d.oxygen",
+  mutate(study="NLA") %>% 
+  add_row(Indicator="d.oxygen", #lmas
           Category="Good",
           study="LMAS",
           percent=((400/486)*100)) %>% 
@@ -591,6 +427,24 @@ forplot7<-forplot4 %>%
           Category="Poor",
           study="LMAS",
           percent=((10/486)*100)) %>% 
+  add_row(Indicator="d.oxygen", #ny prob
+          Category="Good",
+          study="NYProb",
+          percent=44.08,
+          pct_lcb=27.75,
+          pct_ucb=60.41) %>% 
+  add_row(Indicator="d.oxygen",
+          Category="Fair",
+          study="NYProb",
+          percent=47.69,
+          pct_lcb=27.08,
+          pct_ucb=68.3) %>% 
+  add_row(Indicator="d.oxygen",
+          Category="Poor",
+          study="NYProb",
+          percent=8.23,
+          pct_lcb=0,
+          pct_ucb=19.99) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
@@ -602,12 +456,5 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
   geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
                  position=position_dodge(.9))+
   ylim(0,100)+
-  labs(title="Dissolved oxygen condition in  Probability Study vs. LMAS samples since 2010",y="Percent of Total",x="D.O. Condition")
+  labs(title="Dissolved oxygen condition in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="D.O. Condition")
 ```
-
-
-## Notes for future study:
-
-To consider the influence of other strata (such as depth or ecoregion) keep the adjusted weights the same and use these categories to define sub populations. If we include two sub populations (see how large shallow lakes fair in trophic status) then it's sliced so thin that the confidence interval is really too large to be of any value. 
-
-The question then is when is it valuable to stratify a study as opposed to using subpopulations in the post analysis? The answer is that it depends on the distribution of sub populations. If one of the sub populations is very small compared to the other, for example Long Island samples versus samples from other eco regions, then we would probably want to stratify the samples to ensure we get a representative set from Long Island. If the sub populations are relatively equal, then there's no reason to stratify.
