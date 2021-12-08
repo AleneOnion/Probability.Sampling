@@ -94,6 +94,15 @@ att$OXYGEN <- as.numeric(att$OXYGEN)
 # selecting parameters and adding trophic status
 
 att<-att %>% 
+  # trophic status
+  mutate(phos_trophic=case_when(
+    TP<=10 ~ "oligotrophic",
+    between(TP,10,20) ~ "mesotrophic",
+    TP>=20 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    CHLA<=2 ~ "oligotrophic",
+    between(CHLA,2,8) ~ "mesotrophic",
+    CHLA>=8 ~ "eutrophic")) %>%
   # EPA thresholds
   mutate(TP_threshold=case_when(
     TP<=16 ~ "Good",
@@ -153,14 +162,140 @@ print(sum(att$WgtAdj))
 framesize_LC <- c("EPA"=490) 
 
 ```
+## Comparison to NYS thresholds
+
+The following code actually performs the analysis. It uses the number of sampled lakes in each trophic category (both for phosphorus and chlorophyll) to estimate the ratio of the 2583 lakes we could have sampled are eutrophic, mesotrophic, or eutrophic. 
+
+
+PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasonable assumption but it's obviously preferable to sample all the lakes in the list to avoid this uncertainty. 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+# Trophic classes
+# Estimate assessment result
+
+library(spsurvey)
+
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("chla_trophic","phos_trophic"),
+  subpops = ,
+  siteID = "SITE_ID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
+         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+forplot2$Category <- factor(forplot2$Category, levels=c("oligotrophic", "mesotrophic", "eutrophic"))
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of trophic classes across Eastern Highland ponded waters",y="Percent of Total",x="Trophic status")
+
+forplot5<-forplot2 %>% 
+  spread(percent,results) %>% 
+  rename(percent=pct) %>% 
+  mutate(study="NLA") %>% 
+  add_row(Indicator="Trophic Status from ChlA", #lmas
+          Category="eutrophic",
+          study="LMAS",
+          percent=((215/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="mesotrophic",
+          study="LMAS",
+          percent=((182/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="oligotrophic",
+          study="LMAS",
+          percent=((76/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="eutrophic",
+          study="LMAS",
+          percent=((211/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="mesotrophic",
+          study="LMAS",
+          percent=((141/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="oligotrophic",
+          study="LMAS",
+          percent=((121/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA", #ny prob
+          Category="eutrophic",
+          study="NYProb",
+          percent=9.42,
+          pct_lcb=2.95,
+          pct_ucb=15.89) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="mesotrophic",
+          study="NYProb",
+          percent=69.43,
+          pct_lcb=44.35,
+          pct_ucb=94.50) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="oligotrophic",
+          study="NYProb",
+          percent=21.15,
+          pct_lcb=5.97,
+          pct_ucb=36.33) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="eutrophic",
+          study="NYProb",
+          percent=26.73,
+          pct_lcb=11.26,
+          pct_ucb=42.2)  %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="mesotrophic",
+          study="NYProb",
+          percent=34.85,
+          pct_lcb=12.43,
+          pct_ucb=57.27) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="oligotrophic",
+          study="NYProb",
+          percent=53.96,
+          pct_lcb=32.36,
+          pct_ucb=75.56) %>% 
+  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
+         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+  
+
+ggplot(forplot5, aes(x=Category,fill=study)) +
+  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
+                 position=position_dodge(.9))+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
+  
+```
 
 ## Comparison to NLA thresholds
 
 The following code performs the analysis against EPA's condition thresholds as used in the National Lakes Assessments. It uses the number of sampled lakes in each condition category (for total phosphorus, total nitrogen and chlorophyll) to estimate the ratio of all lakes in good, fair and poor condition.
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-
-library(spsurvey)
 
 # EPA nutrient threshold
 #  Estimate assessment result
@@ -201,7 +336,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of Adirondack Ponded Waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
+  labs(title="Distribution of Eastern Highlands ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
 ```
 
 Below, the analysis is done for each dissolved oxygen condition category.
@@ -251,7 +386,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of dissolved oxygen conditions across Adirondack Ponded Waters",y="Percent of Total",x="Condition category")
+  labs(title="Distribution of dissolved oxygen conditions across Eastern Highlands ponded waters",y="Percent of total",x="Condition category")
 ```
 
 ## Comparison to NY probability and LMAS
@@ -458,3 +593,10 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
   ylim(0,100)+
   labs(title="Dissolved oxygen condition in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="D.O. Condition")
 ```
+
+
+## Questions
+
+Why are population sizes across size categories the same?
+Why are our error bars bigger than theirs?
+Should the weight adjustment be calculated using the whole population or the filtered subset?
