@@ -1,0 +1,517 @@
+---
+title: "DO.PH.standards.analysis"
+author: "NYS Department of Environmental Conservation"
+date: "`r format(Sys.Date(),format='%B %d, %Y')`"
+output:  
+  html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#first run the Lake.Report.R code through to the rmarkdown lines
+#then save hypoepi and profiles this way:
+#backuph<-hypoepi
+#backupp<-profiles
+
+#run this report using this code:
+#hypoepi<-backuph
+#profiles<-backupp
+#rmarkdown::render("DO.PH.Standards.Analysis.Rmd")
+```
+
+# {.tabset}
+Analysis of DO and PH Profile Readings in Ponded Waters
+
+## Strategy Described
+
+The most recent USEPA draft nutrient criteria uses average hypolimnetic DO concentrations as an end point. The value of this method is that it is isn't skewed by single outlier readings which every multiprobe is prone to do. It's also valuable because it excludes the epilimnion where photosynthesis results in very high DO concentrations and where temperatures are often too high for fish. For these reasons, we felt the method USEPA used to calculate the hypolimnetic DO values could also be used to identify waterbodies in NYS with DO or PH exceedences.
+
+For a description of the USEPA method of calculating average hypolimnetic DO concentrations, see pg 24 of the draft nutrient criteria: https://www.epa.gov/sites/production/files/2020-05/documents/draft-ambient-wqc-recommendations-lakes-2020.pdf
+
+Futher support for this approach comes from Fish and Wildlife technical guidance (stored on the LMAS General Planner): "As long as there is a sufficient volume of hypolimnetic water that is able to support the survival, growth, and reproduction of the lake’s ecological community during thermal stratification,  assigning specific numeric DO values to the  hypolimnion is not necessary."
+In otherwords, we do not list waterbodies as impaired with a single DO or PH exceedence but we need to ensure there is at least some habitat in the water column which are within the water quality standards.
+
+The following analysis examines the waterbodies with average hypolimnetic values exceeding water quality standards compared to those with averaged entire water column values exceeding water quality standards.
+
+
+## Data Set Used
+
+The entire NYSDEC DOW Ponded Water Data set of PH, DO, and Temperature Readings were used for this analysis with these restrictions:
+
+1. Removed measurments that were less than 1m apart
+
+2. Removed readings with NA for depth
+
+3. Removed those with less than 3 measurements per sampling date/location and therefore are not likely profile data
+
+4. Converted PH to [H+] to calculate the mean and then converted back the mean using log10[H+]
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+library(dplyr)
+library(rmarkdown)
+library(tidyr)
+
+#first run the Lake.Report.R up to line 340 (when it actually starts generating reports)
+
+rm(list=setdiff(ls(), c("data","hypoepi","profiles","backuph","backupp")))
+
+#USE hypoepi just to generate list of lakes/dates with hypo sample
+hypoepi<-hypoepi %>% 
+  filter(INFO_TYPE=="hypolimnion") %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE) %>% 
+  distinct()
+
+#remove redundancy in profile data caused by merging with standards
+#restrict to only DO, PH, and Temp
+#remove measurements that are less than 1m apart
+#remove those with NA for depth
+#remove those with less than 3 measurements in the profile and therefore likely not a profile
+#convert ph to [H+] because can't average log values
+profiles<-profiles %>% 
+  select(LAKE_ID,LOCATION_ID,Characteristic.Name,WATER,Waterbody_Classification,PWLID,X_Coordinate,Y_Coordinate,SAMPLE_NAME,DATA_PROVIDER,SAMPLE_DATE,year,TIME,Depth,Result.Value,Result.Unit,Result.Sample.Fraction,INFO_TYPE) %>% 
+  filter(Characteristic.Name %in% c('PH','DISSOLVED OXYGEN (DO)','TEMPERATURE, WATER'),
+         !is.na(Depth),
+         Depth!=0) %>% 
+  mutate(Result.Value = ifelse(Characteristic.Name=="PH",10^Result.Value,Result.Value)) %>% 
+  distinct()
+
+#first remove measurements that are less than 1m apart
+hypo<-profiles %>% 
+  filter(Characteristic.Name=='TEMPERATURE, WATER') %>% 
+  arrange(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name,Depth) %>% 
+  filter(!is.na(LAKE_ID))
+LID<-hypo$LOCATION_ID[1]
+date<-hypo$SAMPLE_DATE[1]
+depth<-hypo$Depth[1]
+for(i in seq(nrow(hypo))){
+  current<-hypo[i,]
+  if(current$LOCATION_ID==LID&current$SAMPLE_DATE==date){
+    if((current$Depth-depth)>=1){
+      depth=current$Depth
+    }
+    else{
+      #remove values that are less than 1m apart
+      hypo$Depth[i]<-NA
+    }
+  }
+  else{
+    LID=current$LOCATION_ID
+    date=current$SAMPLE_DATE
+    depth=current$Depth
+  }
+}
+hypo<-hypo %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Depth) %>% 
+  #remove depths that arre NA because they were less than 1m apart
+  filter(!is.na(Depth))
+profiles<-profiles %>% 
+  inner_join(hypo,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE','Depth')) %>% 
+  arrange(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name,Depth) %>% 
+  group_by(LOCATION_ID,SAMPLE_DATE,Characteristic.Name) %>% 
+  mutate(n=n()) %>% 
+  ungroup() %>% 
+  filter(n>2) %>% 
+  distinct() %>% 
+  filter(!is.na(Depth)) %>% 
+  distinct()
+
+rm(list=setdiff(ls(), c("data","hypoepi","profiles","backuph","backupp")))
+```
+
+## Hypolimnion Exceedences
+
+### Summary
+
+In order to identify water quality standard exceedences in the hypolimnion only, I did the following:
+
+1. Restricted the data set only to hypolimnion data meaning that there were at least two readings below the point where the temperature gradient exceeded 1 degree C/ meter. PLEASE NOTE that this is the top of the thermocline so it includes both the metalimnion and hypolimnion technically.
+
+2. It's important to note that there were 264 sampling events out of 3939 which had a thermocline of less than the usual 5m. These require human eyes to accurately determine the thermocline.
+
+3. The resulting table is a list of all the waterbodies with at least one average hypolimnetic value which exceeds do or ph water quality standards:
+
+Total = Total number of sampling events (unique date/location)
+
+DO Exceedences = number of sampling events (ie unique location/date) with an average hypolimnetic DO concentration below the water quality standard of 4mg/L
+    
+PH Low Exceedences = number of sampling events (ie unique location/date) with an average hypolimnetic ph value below the water quality standard of 6.5
+    
+PH High Exceedences = number of sampling events (ie unique location/date) with an average hypolimnetic ph value above the water quality standard of 8.5
+    
+    
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+library(DT)
+#restrict profile data to only those lakes with hypolimnions:
+hypo<-profiles %>% 
+  inner_join(hypoepi,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE')) %>% 
+  distinct() %>% 
+  arrange(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name,Depth)
+
+#generate thermocline
+thermocline<-hypo %>% 
+  filter(Characteristic.Name=='TEMPERATURE, WATER') %>% 
+  mutate(thermocline=NA)
+LID<-thermocline$LOCATION_ID[1]
+date<-thermocline$SAMPLE_DATE[1]
+depth<-thermocline$Depth[1]
+temp<-thermocline$Result.Value[1]
+for(i in seq(nrow(thermocline))){
+  current<-thermocline[i,]
+  if(current$LOCATION_ID==LID&current$SAMPLE_DATE==date){
+      depth=current$Depth
+      if((temp-current$Result.Value)>1){
+        thermocline$thermocline[i]<-current$Depth
+      }
+      temp=current$Result.Value
+  }
+  else{
+    LID=current$LOCATION_ID
+    date=current$SAMPLE_DATE
+    depth=current$Depth
+    temp=current$Result.Value
+  }
+}
+#pull the lowest value for all
+thermocline<-thermocline %>% 
+  group_by(LOCATION_ID,SAMPLE_DATE) %>% 
+  mutate(thermocline=min(thermocline, na.rm=T)) %>% 
+  ungroup() %>% 
+  mutate(thermocline=ifelse(thermocline==Inf,NA,thermocline)) %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE,thermocline,Depth) %>% 
+  #remove those without a thermocline
+  filter(!is.na(thermocline)) %>% 
+  distinct()
+
+#add back in to hypo
+#merge by depth as well to remove those depths that were less than 1m apart
+hypo<-hypo %>% 
+  inner_join(thermocline,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE','Depth')) %>% 
+  filter(Characteristic.Name %in% c('PH','DISSOLVED OXYGEN (DO)')) %>% 
+  distinct() %>% 
+  arrange(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name,Depth) 
+rm(list=setdiff(ls(), c("data","hypoepi","profiles","hypo",'thermocline',"backuph","backupp")))
+
+
+#remove values that are less than the thermocline depth
+#this requires that I remove those samples without a thermocline first
+#I also removed those with only one measurment below the thermocline
+hypo<-hypo %>% 
+  filter(Depth>=thermocline) %>% 
+  distinct() %>% 
+  group_by(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name) %>% 
+  summarize(Mean=mean(Result.Value,na.rm=TRUE),
+            n=n()) %>% 
+  filter(n>2) %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name,Mean)
+
+#take this opportunity to truncate the thermocline table to only those which are being used
+#meaning that there is at least two measurments below the thermocline
+truncate<-hypo %>% select(LAKE_ID,LOCATION_ID,SAMPLE_DATE) %>% distinct()
+thermocline<-merge(truncate,thermocline,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE'),all.x=TRUE)
+
+doviol<-hypo %>% 
+  filter(Characteristic.Name=='DISSOLVED OXYGEN (DO)') %>% 
+  filter(Mean<4) %>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(DO_Exceedences=n)
+
+phlowviol<-hypo %>% 
+  filter(Characteristic.Name=='PH') %>% 
+  mutate(Mean=log10(Mean)) %>% 
+  filter(Mean<6.5)%>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(PH_Low_Exceedences=n)
+
+phhighviol<-hypo %>% 
+  filter(Characteristic.Name=='PH') %>% 
+  mutate(Mean=log10(Mean)) %>% 
+  filter(Mean>8.5)%>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(PH_High_Exceedences=n)
+
+#now generate a list of total samples
+totals<-profiles %>% 
+  select(LOCATION_ID,SAMPLE_DATE) %>% 
+  distinct() %>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(Total=n)
+
+violations<-merge(doviol,phlowviol,by=c('LOCATION_ID'),all=TRUE)
+violations<-merge(violations,phhighviol,by=c('LOCATION_ID'),all=TRUE)
+violations<-merge(violations,totals,by=c('LOCATION_ID'),all.x=TRUE)
+violations<-violations %>% 
+  select(LOCATION_ID,Total,DO_Exceedences,PH_Low_Exceedences,PH_High_Exceedences) %>% 
+  arrange(-DO_Exceedences,-PH_Low_Exceedences,-PH_High_Exceedences)
+
+#preserve the representative DO and PH values - meaning the averaged hypoimnetic PH and DO values
+#convert back to regular ph units
+hypo<-hypo %>% 
+  mutate(Mean=ifelse(Characteristic.Name=="PH",log10(Mean),Mean),
+         stratified="stratified")
+
+rm(list=setdiff(ls(), c("data","hypoepi","profiles","violations",'thermocline',"backuph","backupp","hypo")))
+```
+
+
+### Tabulated Data
+
+A table of all the exceedences
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+cat(" \n\n ")
+
+datatable(violations, extensions = 'Buttons', options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+    cat(" \n\n ")
+
+```
+
+### Data Plots
+
+The following plots are in the same order as the tabulated data. Therefore, plots at the top have the largest number of excedences of hypolimnetic averages.
+Only the top 100 locations are plotted to reduce the size of this document.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE,eval=FALSE}
+lakes<-violations$LOCATION_ID
+
+profiles2<-profiles %>% 
+  mutate(Result.Value=ifelse(Characteristic.Name=="PH",log10(Result.Value),Result.Value))
+profiles2<-merge(profiles2,thermocline,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE','Depth'),all=TRUE)
+profiles2<-profiles2 %>% 
+  mutate(thermocline=ifelse(thermocline==Depth,'thermocline','stratified profile'),
+         thermocline=ifelse(is.na(thermocline),'unstratified profile',thermocline))
+
+
+library(ggplot2)
+    for(j in 1:100){
+      display<-paste("  \n \n",lakes[j],"  \n",sep="")
+      cat(display)
+      rm(display)
+      
+     temp1<-profiles2 %>% filter(LOCATION_ID==lakes[j])
+       if((length(temp1$Result.Value))!=0){
+        temp1<-temp1[order(temp1$SAMPLE_DATE,temp1$Depth),]
+        temp1$SAMPLE_DATE<-format(temp1$SAMPLE_DATE,"%Y.%m.%d")
+        temp1$SAMPLE_DATE<-factor(temp1$SAMPLE_DATE,unique(temp1$SAMPLE_DATE))
+        print(ggplot(temp1[order(temp1$Depth,temp1$SAMPLE_DATE),],aes(Result.Value,Depth)) +
+                geom_point(aes(shape=factor(thermocline))) +
+                scale_shape_manual(name = "thermocline", values = c(1,20,8))+
+                geom_path(aes(color=factor(SAMPLE_DATE))) +
+                scale_y_reverse(lim = c((max(temp1$Depth)+0.25),0)) +
+                theme(legend.title=element_blank()) +
+                facet_wrap(~Characteristic.Name,scales = "free_y")+
+                labs(y="Depth (m)",x="parameter units",colour = ""))
+        }
+      cat("\n\n")
+      cat("\n\n")
+    }
+
+```
+
+## Unstratified Exceedences
+
+### Summary
+
+Values for the unstratified profiles averaged for each sampling event (unique date/location) and filtered those which exceeeded water quality standards.
+Unstratified profiles are simply the profiles that are not included in the table of hypolimnetic table above (an outer join).
+
+Total = Total number of sampling events (unique date/location)
+
+DO Exceedences = number of sampling events (ie unique location/date) with an average DO concentration below the water quality standard of 4mg/L
+    
+PH Low Exceedences = number of sampling events (ie unique location/date) with an average ph value below the water quality standard of 6.5
+    
+PH High Exceedences = number of sampling events (ie unique location/date) with an average ph value above the water quality standard of 8.5
+    
+
+    
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+library(DT)
+
+exclude<-hypo %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE) %>% 
+  distinct()
+unstratified<-anti_join(profiles,exclude,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE'))
+unstratified<-unstratified %>% 
+  group_by(LAKE_ID,LOCATION_ID,SAMPLE_DATE,Characteristic.Name) %>% 
+  summarize(Mean=mean(Result.Value,na.rm=TRUE)) %>% 
+  ungroup() %>% 
+  mutate(Mean=ifelse(Characteristic.Name=="PH",log10(Mean),Mean))
+unstratified$stratified<-"unstratified"
+
+doviol<-unstratified %>% 
+  filter(Characteristic.Name=='DISSOLVED OXYGEN (DO)') %>% 
+  filter(Mean<4) %>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(DO_Exceedences=n)
+
+phlowviol<-unstratified %>% 
+  filter(Characteristic.Name=='PH') %>% 
+  filter(Mean<6.5)%>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(PH_Low_Exceedences=n)
+
+phhighviol<-unstratified %>% 
+  filter(Characteristic.Name=='PH') %>% 
+  filter(Mean>8.5)%>% 
+  group_by(LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(PH_High_Exceedences=n)
+
+#now generate a list of total samples
+totals<-profiles %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE) %>% 
+  distinct() %>% 
+  group_by(LAKE_ID,LOCATION_ID) %>% 
+  summarize(n=n()) %>% 
+  rename(Total=n)
+
+viol<-merge(doviol,phlowviol,by=c('LOCATION_ID'),all=TRUE)
+viol<-merge(viol,phhighviol,by=c('LOCATION_ID'),all=TRUE)
+viol<-merge(viol,totals,by=c('LOCATION_ID'),all=TRUE)
+viol<-viol %>% 
+  select(LOCATION_ID,Total,DO_Exceedences,PH_Low_Exceedences,PH_High_Exceedences) %>% 
+  arrange(-DO_Exceedences,-PH_Low_Exceedences,-PH_High_Exceedences)
+
+#preserve unstratified
+unstratified<-unstratified
+ 
+rm(list=setdiff(ls(), c("data","hypoepi","profiles","violations",'thermocline','viol',"backuph","backupp","hypo","unstratified")))
+```
+
+
+### Tabulated Data
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+cat(" \n\n ")
+
+  datatable(viol, extensions = 'Buttons', options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+    cat(" \n\n ")
+
+```
+
+### Data Plots
+
+The following plots are in the same order as the tabulated data. Therefore, plots at the top have the largest number of excedences of hypolimnetic averages.
+Only the top 100 locations are plotted to reduce the size of this document.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE,eval=FALSE}
+lakes<-viol$LOCATION_ID
+
+profiles2<-profiles %>% 
+  mutate(Result.Value=ifelse(Characteristic.Name=="PH",log10(Result.Value),Result.Value))
+profiles2<-merge(profiles2,thermocline,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE','Depth'),all=TRUE)
+profiles2<-profiles2 %>% 
+  mutate(thermocline=ifelse(thermocline==Depth,'thermocline','stratified profile'),
+         thermocline=ifelse(is.na(thermocline),'unstratified profile',thermocline))
+
+
+library(ggplot2)
+    for(j in 1:100){
+      display<-paste("  \n \n",lakes[j],"  \n",sep="")
+      cat(display)
+      rm(display)
+      
+     temp1<-profiles2 %>% filter(LOCATION_ID==lakes[j])
+      if((length(temp1$Result.Value))!=0){
+        temp1<-temp1[order(temp1$SAMPLE_DATE,temp1$Depth),]
+        temp1$SAMPLE_DATE<-format(temp1$SAMPLE_DATE,"%Y.%m.%d")
+        temp1$SAMPLE_DATE<-factor(temp1$SAMPLE_DATE,unique(temp1$SAMPLE_DATE))
+        print(ggplot(temp1[order(temp1$Depth,temp1$SAMPLE_DATE),],aes(Result.Value,Depth)) +
+                geom_point(aes(shape=factor(thermocline))) +
+                scale_shape_manual(name = "thermocline", values = c(1,20,8))+
+                geom_path(aes(color=factor(SAMPLE_DATE))) +
+                scale_y_reverse(lim = c((max(temp1$Depth)+0.25),0)) +
+                theme(legend.title=element_blank()) +
+                facet_wrap(~Characteristic.Name,scales = "free_y")+
+                labs(y="Depth (m)",x="Parameter Unit",colour = ""))
+      }
+    
+      cat("\n\n")
+    }
+
+```
+
+## Representative DO and PH Results
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+cat(" \n\n ")
+
+combined<-merge(hypo,unstratified,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE','Characteristic.Name','Mean','stratified'),all = TRUE)
+combined<-combined %>% 
+  mutate(Characteristic.Name=paste("Representative ",Characteristic.Name,sep=""))
+
+
+datatable(combined, extensions = 'Buttons', options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+    cat(" \n\n ")
+
+```
+
+### Checking on the accuracy of the thermocline
+
+The purpose of this section is to confirm that the thermoclines were acurately calculated. Each thermocline is plotted and examined manually to confirm the automated calculation.
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+thermocline2<-thermocline %>% 
+  select(LAKE_ID,LOCATION_ID,SAMPLE_DATE,thermocline) %>% distinct()
+
+lakes<-thermocline2$LOCATION_ID
+
+profiles2<-profiles %>% 
+  mutate(Result.Value=ifelse(Characteristic.Name=="PH",log10(Result.Value),Result.Value))
+profiles2<-merge(thermocline2,profiles2,by=c('LAKE_ID','LOCATION_ID','SAMPLE_DATE'),all.x=TRUE)
+profiles2<-profiles2 %>% 
+  mutate(thermocline=ifelse(thermocline==Depth,'thermocline','stratified profile'))
+
+
+library(ggplot2)
+    for(j in 1:100){
+      display<-paste("  \n \n",lakes[j],"  \n",sep="")
+      cat(display)
+      rm(display)
+      
+     temp1<-profiles2 %>% filter(LOCATION_ID==lakes[j])
+       if((length(temp1$Result.Value))!=0){
+        temp1<-temp1[order(temp1$SAMPLE_DATE,temp1$Depth),]
+        temp1$SAMPLE_DATE<-format(temp1$SAMPLE_DATE,"%Y.%m.%d")
+        temp1$SAMPLE_DATE<-factor(temp1$SAMPLE_DATE,unique(temp1$SAMPLE_DATE))
+        print(ggplot(temp1[order(temp1$Depth,temp1$SAMPLE_DATE),],aes(Result.Value,Depth)) +
+                geom_point(aes(shape=factor(thermocline))) +
+                scale_shape_manual(name = "thermocline", values = c(1,20,8))+
+                geom_path(aes(color=factor(SAMPLE_DATE))) +
+                scale_y_reverse(lim = c((max(temp1$Depth)+0.25),0)) +
+                theme(legend.title=element_blank()) +
+                facet_wrap(~Characteristic.Name,scales = "free_y")+
+                labs(y="Depth (m)",x="parameter units",colour = ""))
+        }
+      cat("\n\n")
+      cat("\n\n")
+    }
+```
+
+
+## Plotting the distribution of stratified lakes
+
+5 meters is the 5th percentile in the distribution of lake depths for all 147 stratified lakes
+therefore we should sample the hypolimnion in all lakes >5m
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+thermocline3<-thermocline %>% 
+  group_by(LAKE_ID,LOCATION_ID,SAMPLE_DATE,thermocline) %>% 
+  summarize(Depth=max(Depth)) %>% 
+  ungroup()%>% 
+  mutate(lake="lakes")
+
+thermocline3 %>% 
+  mutate(fifth = quantile(Depth, probs = 0.05, na.rm = TRUE)) %>% 
+  select(fifth) %>% distinct()
+```

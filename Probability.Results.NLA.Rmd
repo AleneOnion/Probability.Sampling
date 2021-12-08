@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 # {.tabset}
-Doing the probability sampling results analysis with NLA data of lakes in Eastern Highlands with area >6.5 acres
+Doing the probability sampling results analysis with NLA data of lakes in Northern Appalachians with area >6.5 acres
 
 ## Prepping data
 
@@ -68,10 +68,10 @@ sites <- read.csv("nla_2017_site_information-data.csv")
 
 sites <- sites %>% 
   filter(AREA_HA>2.63,
-         AG_ECO3 == "EHIGH") %>% 
+         AG_ECO9 == "NAP") %>% 
   select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
-  rename(xcoord=LAT_DD83,
-         ycoord=LON_DD83)
+  rename(ycoord=LAT_DD83,
+         xcoord=LON_DD83)
 
 cats <- data.frame(
   AREA_CAT6=unique(sites$AREA_CAT6),
@@ -151,15 +151,15 @@ for(i in 1:5){
 # add adjusted weight variable
 att<-att %>% 
   mutate(WgtAdj=case_when(
-         AREA_CAT6=="(1,4]"~(40/10),
-         AREA_CAT6=="(4,10]"~(96/26),
-         AREA_CAT6=="(10,20]"~(115/48),
-         AREA_CAT6=="(20,50]"~(105/56),
-         AREA_CAT6==">50"~(134/85)))
+         AREA_CAT6=="(1,4]"~(20/6),
+         AREA_CAT6=="(4,10]"~(44/16),
+         AREA_CAT6=="(10,20]"~(46/24),
+         AREA_CAT6=="(20,50]"~(60/31),
+         AREA_CAT6==">50"~(66/37)))
 
 print(sum(att$WgtAdj))
 
-framesize_LC <- c("EPA"=490) 
+framesize_LC <- c("EPA"=236) 
 
 ```
 ## Comparison to NYS thresholds
@@ -336,7 +336,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of Eastern Highlands ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
+  labs(title="Distribution of Northern Appalachians ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
 ```
 
 Below, the analysis is done for each dissolved oxygen condition category.
@@ -386,7 +386,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Distribution of dissolved oxygen conditions across Eastern Highlands ponded waters",y="Percent of total",x="Condition category")
+  labs(title="Distribution of dissolved oxygen conditions across Northern Appalachians ponded waters",y="Percent of total",x="Condition category")
 ```
 
 ## Comparison to NY probability and LMAS
@@ -594,9 +594,43 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
   labs(title="Dissolved oxygen condition in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="D.O. Condition")
 ```
 
+## Sites map
+
+```{r maps, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+#read in lat/long for lakes
+ny.locs <- read.csv("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/Probability_Based_Sites_2020_2021.csv") %>% 
+  filter(EvalStatus=="Target_Sampled ") %>% 
+  select(LAT_DD83,LON_DD83) %>% 
+  rename(ycoord=LAT_DD83,
+         xcoord=LON_DD83) %>% 
+  mutate(study="NY")
+nla.locs <- sites %>% 
+  select(xcoord,ycoord) %>% 
+  mutate(study="NLA")
+
+locs <- rbind(ny.locs,nla.locs)
+
+#fetch map
+library(ggmap)
+library(maps)
+
+states <- map_data("state")
+east.coast <- subset(states, region %in% c("maine", "ohio", "new york", "pennsylvania","new jersey","connecticut","rhode island","massachusetts","vermont","new hampshire"))
+
+locs.map <- ggplot() + 
+  geom_polygon(data=east.coast,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=study))+
+  guides(fill=FALSE)  # do this to leave off the color legend
+
+print(locs.map)
+```
 
 ## Questions
 
-Why are population sizes across size categories the same?
-Why are our error bars bigger than theirs?
-Should the weight adjustment be calculated using the whole population or the filtered subset?
+- Why are population sizes across size categories the same?
+
+- Why are our error bars bigger than theirs?
+
+- Should the weight adjustment be calculated using the whole population or the filtered subset?
