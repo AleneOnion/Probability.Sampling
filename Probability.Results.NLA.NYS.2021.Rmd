@@ -1,5 +1,5 @@
 ---
-title: "Probability Sampling Results NLA 2017"
+title: "Probability Sampling Results 2021"
 author: "Alene Onion and Tony Olsen of USEPA (modified by Sabrina Xie)"
 date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
 output: html_document
@@ -67,8 +67,7 @@ oxygen <- oxygen %>%
 sites <- read.csv("nla_2017_site_information-data.csv")
 
 sites <- sites %>% 
-  filter(AREA_HA>2.63,
-         AG_ECO9 == "NAP") %>% 
+  filter(AREA_HA>2.63) %>% 
   select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
   rename(ycoord=LAT_DD83,
          xcoord=LON_DD83)
@@ -151,15 +150,15 @@ for(i in 1:5){
 # add adjusted weight variable
 att<-att %>% 
   mutate(WgtAdj=case_when(
-         AREA_CAT6=="(1,4]"~(20/6),
-         AREA_CAT6=="(4,10]"~(44/16),
-         AREA_CAT6=="(10,20]"~(46/24),
-         AREA_CAT6=="(20,50]"~(60/31),
-         AREA_CAT6==">50"~(66/37)))
+         AREA_CAT6=="(1,4]"~(478/67),
+         AREA_CAT6=="(4,10]"~(1184/188),
+         AREA_CAT6=="(10,20]"~(1002/211),
+         AREA_CAT6=="(20,50]"~(738/237),
+         AREA_CAT6==">50"~(869/357)))
 
 print(sum(att$WgtAdj))
 
-framesize_LC <- c("EPA"=236) 
+framesize_LC <- c("EPA"=4271) 
 
 ```
 ## Comparison to NYS thresholds
@@ -281,10 +280,9 @@ forplot5<-forplot2 %>%
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
 
-ggplot(forplot5, aes(x=Category,fill=study)) +
-  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
-  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
-                 position=position_dodge(.9))+
+ggplot(forplot5, aes(x=Category)) +
+  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
@@ -399,37 +397,36 @@ frame<-att %>%
   select(AREA_CAT6) %>% 
   rename(size_category=AREA_CAT6) %>% 
   distinct() %>%
-  mutate(NLA_Sites = case_when(
+  mutate(NAP = case_when(
     endsWith(size_category, "(1,4]") ~ ((40/490)*100),
     endsWith(size_category, "(4,10]") ~ ((96/490)*100),
     endsWith(size_category, "(10,20]") ~ ((115/490)*100),
     endsWith(size_category, "(20,50]") ~ ((105/490)*100),
     endsWith(size_category, ">50") ~ ((134/490)*100))
   ) %>%
-  mutate(Probability_Sites = case_when(
+  mutate(NY = case_when(
     endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
     endsWith(size_category, "(4,10]") ~ ((2490/6437)*100),
     endsWith(size_category, "(10,20]") ~ ((1003/6437)*100),
     endsWith(size_category, "(20,50]") ~ ((616/6437)*100),
     endsWith(size_category, ">50") ~ ((500/6437)*100))
     ) %>%
-  mutate(LMAS_Sites = case_when(
-    endsWith(size_category, "(1,4]") ~ (7.64),
-    endsWith(size_category, "(4,10]") ~ (16.7),
-    endsWith(size_category, "(10,20]") ~ (16.2),
-    endsWith(size_category, "(20,50]") ~ (19.3),
-    endsWith(size_category, ">50") ~ (40.1)
-  )) %>%
+  mutate(NLA = case_when(
+    endsWith(size_category, "(1,4]") ~ ((67/4271)*100),
+    endsWith(size_category, "(4,10]") ~ ((188/4271)*100),
+    endsWith(size_category, "(10,20]") ~ ((211/4271)*100),
+    endsWith(size_category, "(20,50]") ~ ((237/4271)*100),
+    endsWith(size_category, ">50") ~ ((357/4271)*100))) %>%
   ungroup() %>%
   gather(study,percentage,-size_category) %>% 
   arrange(study,size_category) %>% 
   mutate(percentage=as.numeric(percentage),
          size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
 
-ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
-  geom_bar(stat = "identity", position = position_dodge())+
+ggplot(frame, aes(x=size_category,y=percentage,color=study)) +
+  geom_point(stat = "identity", size=2)+
   ylim(0,100)+
-  labs(title="Size classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Size Category (hectares)")
+  labs(title="Size classes in NLA national vs. Northern Appalachian vs. NY",y="Percent of Total",x="Size Category (hectares)")
 
 
 ```
@@ -440,143 +437,165 @@ forplot6<-forplot %>%
   spread(percent,results) %>% 
   rename(percent=pct) %>% 
   mutate(study="NLA") %>% 
-  add_row(Indicator="ChlA", #lmas results
+  add_row(Indicator="ChlA", #NAP results
           Category="Good",
-          study="LMAS",
-          percent=((306/752)*100)) %>% 
+          study="NAP",
+          percent=52.39,
+          pct_lcb=45.11,
+          pct_ucb=59.67) %>% 
   add_row(Indicator="ChlA",
           Category="Fair",
-          study="LMAS",
-          percent=((144/752)*100)) %>% 
+          study="NAP",
+          percent=16.62,
+          pct_lcb=10.62,
+          pct_ucb=22.62) %>% 
   add_row(Indicator="ChlA",
           Category="Poor",
-          study="LMAS",
-          percent=((302/752)*100)) %>% 
+          study="NAP",
+          percent=30.99,
+          pct_lcb=24.29,
+          pct_ucb=37.69) %>% 
   add_row(Indicator="Phosphorus",
           Category="Good",
-          study="LMAS",
-          percent=((262/501)*100)) %>% 
+          study="NAP",
+          percent=56.16,
+          pct_lcb=48.77,
+          pct_ucb=63.54) %>% 
   add_row(Indicator="Phosphorus",
           Category="Fair",
-          study="LMAS",
-          percent=((82/501)*100)) %>% 
+          study="NAP",
+          percent=25.50,
+          pct_lcb=18.64,
+          pct_ucb=32.36) %>% 
   add_row(Indicator="Phosphorus",
           Category="Poor",
-          study="LMAS",
-          percent=((157/501)*100)) %>% 
+          study="NAP",
+          percent=21.27,
+          pct_lcb=15.40,
+          pct_ucb=27.15) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Good",
-          study="LMAS",
-          percent=((186/441)*100)) %>% 
+          study="NAP",
+          percent=59.48,
+          pct_lcb=52.63,
+          pct_ucb=66.33) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Fair",
-          study="LMAS",
-          percent=((108/441)*100)) %>% 
+          study="NAP",
+          percent=25.50,
+          pct_lcb=18.64,
+          pct_ucb=32.36) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Poor",
-          study="LMAS",
-          percent=((147/441)*100)) %>% 
+          study="NAP",
+          percent=15.01,
+          pct_lcb=9.70,
+          pct_ucb=20.32) %>% 
   add_row(Indicator="ChlA", #nys prob results
           Category="Good",
-          study="NYProb",
+          study="NY",
           percent=44.82,
           pct_lcb=29.56,
           pct_ucb=60.08) %>% 
   add_row(Indicator="ChlA",
           Category="Fair",
-          study="NYProb",
+          study="NY",
           percent=33.57,
           pct_lcb=12.23,
           pct_ucb=54.91) %>% 
   add_row(Indicator="ChlA",
           Category="Poor",
-          study="NYProb",
+          study="NY",
           percent=8.16,
           pct_lcb=2.55,
           pct_ucb=13.76) %>% 
   add_row(Indicator="Phosphorus",
           Category="Good",
-          study="NYProb",
+          study="NY",
           percent=67.55,
           pct_lcb=43.96,
           pct_ucb=91.14) %>% 
   add_row(Indicator="Phosphorus",
           Category="Fair",
-          study="NYProb",
+          study="NY",
           percent=12.96,
           pct_lcb=4.48,
           pct_ucb=21.44) %>% 
   add_row(Indicator="Phosphorus",
           Category="Poor",
-          study="NYProb",
+          study="NY",
           percent=19.49,
           pct_lcb=6.29,
           pct_ucb=32.69) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Good",
-          study="NYProb",
+          study="NY",
           percent=44.45,
           pct_lcb=26.84,
           pct_ucb=62.06) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Fair",
-          study="NYProb",
+          study="NY",
           percent=7.74,
           pct_lcb=1.76,
           pct_ucb=13.73) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Poor",
-          study="NYProb",
+          study="NY",
           percent=17.1,
           pct_lcb=5.02,
           pct_ucb=29.17) %>% 
-  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
-         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
-  
-
-forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor"))
-
-ggplot(forplot6, aes(x=Category,fill=study)) +
-  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
-  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
-                 position=position_dodge(.9))+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="EPA condition categories in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="EPA Condition Classes")
-```
-
-```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
-forplot7<-forplot4 %>% 
-  spread(percent,results) %>% 
-  rename(percent=pct) %>% 
-  mutate(study="NLA") %>% 
-  add_row(Indicator="d.oxygen", #lmas
+  add_row(Indicator="Dissolved Oxygen", #NLA
           Category="Good",
-          study="LMAS",
-          percent=((400/486)*100)) %>% 
-  add_row(Indicator="d.oxygen",
+          study="NLA",
+          percent=89.18,
+          pct_lcb=87.28,
+          pct_ucb=90.99) %>% 
+  add_row(Indicator="Dissolved Oxygen",
           Category="Fair",
-          study="LMAS",
-          percent=((76/486)*100)) %>% 
-  add_row(Indicator="d.oxygen",
+          study="NLA",
+          percent=7.57,
+          pct_lcb=6.03,
+          pct_ucb=9.11) %>% 
+  add_row(Indicator="Dissolved Oxygen",
           Category="Poor",
-          study="LMAS",
-          percent=((10/486)*100)) %>% 
-  add_row(Indicator="d.oxygen", #ny prob
+          study="NLA",
+          percent=3.25,
+          pct_lcb=2.21,
+          pct_ucb=4.28) %>% 
+  add_row(Indicator="Dissolved Oxygen", #NLA NAP prob
           Category="Good",
-          study="NYProb",
+          study="NAP",
+          percent=88.79,
+          pct_lcb=83.57,
+          pct_ucb=94.01) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Fair",
+          study="NAP",
+          percent=6.89,
+          pct_lcb=2.77,
+          pct_ucb=11.02) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Poor",
+          study="NAP",
+          percent=4.32,
+          pct_lcb=0.89,
+          pct_ucb=7.74) %>% 
+  add_row(Indicator="Dissolved Oxygen", #ny prob
+          Category="Good",
+          study="NY",
           percent=44.08,
           pct_lcb=27.75,
           pct_ucb=60.41) %>% 
-  add_row(Indicator="d.oxygen",
+  add_row(Indicator="Dissolved Oxygen",
           Category="Fair",
-          study="NYProb",
+          study="NY",
           percent=47.69,
           pct_lcb=27.08,
           pct_ucb=68.3) %>% 
-  add_row(Indicator="d.oxygen",
+  add_row(Indicator="Dissolved Oxygen",
           Category="Poor",
-          study="NYProb",
+          study="NY",
           percent=8.23,
           pct_lcb=0,
           pct_ucb=19.99) %>% 
@@ -584,14 +603,14 @@ forplot7<-forplot4 %>%
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
 
-forplot7$Category <- factor(forplot7$Category, levels=c("Good","Fair","Poor"))
+forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor"))
 
-ggplot(forplot7, aes(x=Category,fill=study)) +
-  geom_bar(aes(y=percent),stat = "identity", position = position_dodge())+
-  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb), width=.05,
-                 position=position_dodge(.9))+
+ggplot(forplot6, aes(x=Category,fill=study)) +
+  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="Dissolved oxygen condition in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="D.O. Condition")
+  labs(title="EPA condition categories in  NLA vs. Northern Appalachian vs. NY",y="Percent of Total",x="EPA Condition Classes")
 ```
 
 ## Sites map
@@ -599,29 +618,37 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
 ```{r maps, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 
 #read in lat/long for lakes
-ny.locs <- read.csv("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/Probability_Based_Sites_2020_2021.csv") %>% 
-  filter(EvalStatus=="Target_Sampled ") %>% 
+ny.locs <- read.csv("Probability_Based_Sites_2020_2021.csv") %>% 
   select(LAT_DD83,LON_DD83) %>% 
+  rename(xcoord=LON_DD83,
+         ycoord=LAT_DD83) %>% 
+  mutate(study="NY")
+
+nap.locs <- read.csv("nla_2017_site_information-data.csv") %>% 
+  filter(AREA_HA > 2.63,
+         AG_ECO9 == "NAP") %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
   rename(ycoord=LAT_DD83,
          xcoord=LON_DD83) %>% 
-  mutate(study="NY")
+  select(xcoord,ycoord) %>% 
+  mutate(study="NAP")
+
 nla.locs <- sites %>% 
   select(xcoord,ycoord) %>% 
   mutate(study="NLA")
 
-locs <- rbind(ny.locs,nla.locs)
+locs <- rbind(ny.locs,nla.locs,nap.locs)
 
 #fetch map
 library(ggmap)
 library(maps)
 
 states <- map_data("state")
-east.coast <- subset(states, region %in% c("maine", "ohio", "new york", "pennsylvania","new jersey","connecticut","rhode island","massachusetts","vermont","new hampshire"))
 
 locs.map <- ggplot() + 
-  geom_polygon(data=east.coast,aes(x = long, y = lat, group = group), color = "white") + 
+  geom_polygon(data=states,aes(x = long, y = lat, group = group), color = "white") + 
   coord_fixed(1.3) +
-  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=study))+
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=study),shape=4, size=0.5)+
   guides(fill=FALSE)  # do this to leave off the color legend
 
 print(locs.map)

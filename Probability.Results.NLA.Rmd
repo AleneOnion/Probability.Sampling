@@ -339,6 +339,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   labs(title="Distribution of Northern Appalachians ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
 ```
 
+>>>>>>> 0ba55f3d292ab1d29f6a9760447658497f235422
 Below, the analysis is done for each dissolved oxygen condition category.
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
@@ -430,6 +431,7 @@ ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
   geom_bar(stat = "identity", position = position_dodge())+
   ylim(0,100)+
   labs(title="Size classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Size Category (hectares)")
+
 
 
 ```
