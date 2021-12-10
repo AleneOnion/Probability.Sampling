@@ -40,6 +40,7 @@ source("new_database/Reading.LMAS.Data.R")
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
 
 rm(list=setdiff(ls(), c('newdata')))
+
 lab<-newdata %>%
   filter(SAMPLE_DATE>'2020-01-01') %>%
   mutate(combined=paste(CHARACTERISTIC_NAME,
@@ -220,6 +221,10 @@ att<-att %>%
 
 # should add up to 6437
 print(sum(att$WgtAdj))
+
+# save data to csv
+write.csv(att, file="Probability_sampling_data_2021.csv", na = "", quote = TRUE, row.names = FALSE)
+
 ```
 
 Non-target samples are those determined to be wetlands using GIS analysis. Target samples include lakes actually sampled as well as lakes we intended to sample but couldn't for access or wetland status reasons. 
