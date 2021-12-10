@@ -40,6 +40,7 @@ source("new_database/Reading.LMAS.Data.R")
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
 
 rm(list=setdiff(ls(), c('newdata')))
+
 lab<-newdata %>%
   filter(SAMPLE_DATE>'2020-01-01') %>%
   mutate(combined=paste(CHARACTERISTIC_NAME,
@@ -220,6 +221,10 @@ att<-att %>%
 
 # should add up to 6437
 print(sum(att$WgtAdj))
+
+# save data to csv
+write.csv(att, file="Probability_sampling_data_2021.csv", na = "", quote = TRUE, row.names = FALSE)
+
 ```
 
 Non-target samples are those determined to be wetlands using GIS analysis. Target samples include lakes actually sampled as well as lakes we intended to sample but couldn't for access or wetland status reasons. 
@@ -769,6 +774,59 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
                  position=position_dodge(.9))+
   ylim(0,100)+
   labs(title="Dissolved oxygen condition in  Probability Study vs. LMAS samples since 2010",y="Percent of Total",x="D.O. Condition")
+```
+
+## Map
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+#read in lat/long for lakes
+
+locs <- att
+
+#fetch map
+library(ggmap)
+library(maps)
+
+states <- map_data("state")
+ny <- subset(states, region %in% c("new york"))
+
+locs$TN_threshold <- factor(locs$TN_threshold, levels=c("Good","Fair","Poor"))
+locs$TP_threshold <- factor(locs$TP_threshold, levels=c("Good","Fair","Poor"))
+locs$CHLA_threshold <- factor(locs$CHLA_threshold, levels=c("Good","Fair","Poor"))
+locs$d.oxygen <- factor(locs$d.oxygen, levels=c("Good","Fair","Poor"))
+
+
+print(TP <- ggplot() + 
+  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=TP_threshold))+
+  guides(fill=FALSE))  # do this to leave off the color legend)
+
+print(TN <- ggplot() + 
+  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=TN_threshold))+
+  guides(fill=FALSE))  # do this to leave off the color legend)
+
+print(CHLA <- ggplot() + 
+  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=CHLA_threshold))+
+  guides(fill=FALSE))  # do this to leave off the color legend)
+
+print(DO <- ggplot() + 
+  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=d.oxygen))+
+  guides(fill=FALSE))  # do this to leave off the color legend)
+
+print(status <- ggplot() + 
+  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=(Eval_Status=="Target_Sampled")))+
+  guides(fill=FALSE))  # do this to leave off the color legend)
+
 ```
 
 
