@@ -1,9 +1,9 @@
 rm(list=setdiff(ls(), c("newdata")))
 #read in the database if you need it
 #(but you might not)
-# setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Current")
-# source("new_database/Reading.LMAS.Data.R")
-# setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Probability.Sampling")
+setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Current")
+source("new_database/Reading.LMAS.Data.R")
+setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Probability.Sampling")
 
 
 library(tidyverse)
@@ -88,8 +88,10 @@ exceedances<-wqs_violations$exceedance_summary
 lakes<-new_df %>% select(LAKE_ID,seg_id) %>% distinct()
 exceedances<-merge(exceedances,lakes,by=c('seg_id'),all=TRUE)
 exceedances<-exceedances %>% select(-seg_id) %>% 
-  filter(use=="fishing") %>% 
-  mutate(n_exceedances=ifelse(n_exceedances>0,1,n_exceedances))
+  filter(use=="fishing",
+         parameter!="phosphorus",
+         parameter!="chlorophyll_a") %>% 
+  mutate(n_exceedances=ifelse(n_exceedances>0,1,n_exceedances)) 
 
 #write the data frame for Sabrina to use later
 write.csv(exceedances,file="for.sabrina.probability.data.excursions.csv",row.names=FALSE)
