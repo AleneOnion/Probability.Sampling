@@ -67,22 +67,12 @@ oxygen <- oxygen %>%
 sites <- read.csv("nla_2017_site_information-data.csv")
 
 sites <- sites %>% 
-  filter(AREA_HA>2.63,
-         AG_ECO9 == "NAP") %>% 
-  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
-  rename(ycoord=LAT_DD83,
-         xcoord=LON_DD83)
-
-cats <- data.frame(
-  AREA_CAT6=unique(sites$AREA_CAT6),
-  n=as.double(1,2,3,4,5))
-
-for(i in 1:5){
-  b <- cats[i,1]
-  a <- sites %>%
-    filter(AREA_CAT6==b)
-  cats[i,2] <- nrow(a)
-}
+  mutate(include=case_when(
+    AG_ECO9=="NAP" & AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
 
 att <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
 att <- merge(att,sites,by=c("UID","SITE_ID"))
@@ -122,46 +112,10 @@ att<-att %>%
     between(OXYGEN, 3, 5) ~ "Fair",
     OXYGEN>=5 ~ "Good"))
 
-```
-
-## Analysis
-
-The start of the NYSAnalysis code from Tony Olsen
-
-The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
-
-```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-
-# Calculate the adjusted weights
-# The numerator is the original frame size value
-# the denominator is the actual number of samples evaluated in each category
-
-#number of lakes in each probability category
-cats <- data.frame(
-  AREA_CAT6=unique(att$AREA_CAT6),
-  n=as.double(1,2,3,4,5))
-
-for(i in 1:5){
-  b <- cats[i,1]
-  a <- att %>%
-    filter(AREA_CAT6==b)
-  cats[i,2] <- nrow(a)
-}
-
-# add adjusted weight variable
-att<-att %>% 
-  mutate(WgtAdj=case_when(
-         AREA_CAT6=="(1,4]"~(20/6),
-         AREA_CAT6=="(4,10]"~(44/16),
-         AREA_CAT6=="(10,20]"~(46/24),
-         AREA_CAT6=="(20,50]"~(60/31),
-         AREA_CAT6==">50"~(66/37)))
-
-print(sum(att$WgtAdj))
-
-framesize_LC <- c("EPA"=236) 
+framesize_LC <- c("EPA"=5721) 
 
 ```
+
 ## Comparison to NYS thresholds
 
 The following code actually performs the analysis. It uses the number of sampled lakes in each trophic category (both for phosphorus and chlorophyll) to estimate the ratio of the 2583 lakes we could have sampled are eutrophic, mesotrophic, or eutrophic. 
@@ -178,19 +132,20 @@ library(spsurvey)
 CatExtent2 <- cat_analysis(
   dframe=att,
   vars=c("chla_trophic","phos_trophic"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 forplot2<-CatExtent2 %>% 
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
          pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
          Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
@@ -302,19 +257,19 @@ The following code performs the analysis against EPA's condition thresholds as u
 CatExtent <- cat_analysis(
   dframe=att,
   vars=c("TP_threshold","CHLA_threshold","TN_threshold"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 forplot<-CatExtent %>% 
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
          pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",Subpopulation=="yes") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="CHLA_threshold","ChlA",Indicator),
          Indicator=ifelse(Indicator=="TP_threshold","Phosphorus",Indicator),
@@ -348,11 +303,11 @@ Below, the analysis is done for each dissolved oxygen condition category.
 DOextent <- cat_analysis(
   dframe=att,
   vars=c("d.oxygen"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 #quickly calculate the percentages
 totals<-DOextent %>% 
@@ -365,9 +320,9 @@ forplot4<-DOextent %>%
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
          pct_ucb=UCB95Pct.P) %>% 
+  filter(Subpopulation=="yes",Category!="Total") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="d.oxygen","Dissolved Oxygen",Indicator))
 
@@ -427,8 +382,8 @@ frame<-att %>%
   mutate(percentage=as.numeric(percentage),
          size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
 
-ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
-  geom_bar(stat = "identity", position = position_dodge())+
+ggplot(frame, aes(x=study,y=percentage,fill=size_category)) +
+  geom_bar(stat = "identity", position="stack")+
   ylim(0,100)+
   labs(title="Size classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Size Category (hectares)")
 
@@ -604,11 +559,11 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
 ny.locs <- read.csv("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/Probability_Based_Sites_2020_2021.csv") %>% 
   filter(EvalStatus=="Target_Sampled ") %>% 
   select(LAT_DD83,LON_DD83) %>% 
-  rename(ycoord=LAT_DD83,
-         xcoord=LON_DD83) %>% 
+  rename(YCOORD=LAT_DD83,
+         XCOORD=LON_DD83) %>% 
   mutate(study="NY")
 nla.locs <- sites %>% 
-  select(xcoord,ycoord) %>% 
+  select(XCOORD,YCOORD) %>% 
   mutate(study="NLA")
 
 locs <- rbind(ny.locs,nla.locs)
@@ -623,7 +578,7 @@ east.coast <- subset(states, region %in% c("maine", "ohio", "new york", "pennsyl
 locs.map <- ggplot() + 
   geom_polygon(data=east.coast,aes(x = long, y = lat, group = group), color = "white") + 
   coord_fixed(1.3) +
-  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=study))+
+  geom_point(data=locs,aes(x=XCOORD,y=YCOORD,color=study))+
   guides(fill=FALSE)  # do this to leave off the color legend
 
 print(locs.map)
