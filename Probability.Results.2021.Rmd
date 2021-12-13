@@ -510,6 +510,13 @@ frame<-att %>%
     endsWith(size_category, "(20,50]") ~ (19.3),
     endsWith(size_category, ">50") ~ (40.1)
   )) %>%
+  mutate(Target_Sampled = case_when(
+    endsWith(size_category, "(1,4]") ~ (7/62*100),
+    endsWith(size_category, "(4,10]") ~ (6/62*100),
+    endsWith(size_category, "(10,20]") ~ (4/62*100),
+    endsWith(size_category, "(20,50]") ~ (17/62*100),
+    endsWith(size_category, ">50") ~ (28/62*100)
+  )) %>%
   ungroup() %>%
   select(-PROB_CAT) %>% 
   gather(study,percentage,-size_category) %>% 
@@ -517,8 +524,8 @@ frame<-att %>%
   mutate(percentage=as.numeric(percentage),
          size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
 
-ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
-  geom_bar(stat = "identity", position = position_dodge())+
+ggplot(frame, aes(x=study,y=percentage,fill=size_category)) +
+  geom_bar(stat = "identity", position = "stack")+
   ylim(0,100)+
   labs(title="Size classes in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="Size Category (hectares)")
 ```
