@@ -102,3 +102,24 @@ forplot2<-forplot %>%
   add_row(Indicator="Trophic Status from Phosphorus",Category="oligotrophic",study="Long_Term_Trend",percent=((16/37)*100)) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+
+
+setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Current")
+source("new_database/Reading.LMAS.Data.R")
+setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Probability.Sampling")
+
+
+newdata %>% filter(LAKE_HISTORY_ID=="0902SAI0156A") %>% select(SAMPLE_DATE) %>% distinct()
+0902SAI0156A
+0101RES5772
+
+
+filtered_exceedances %>% group_by(seg_id,parameter) %>% 
+  mutate(n=n()) %>% 
+  ungroup() %>% 
+  filter(n>1)
+
+sites<-sites %>% 
+  mutate(LAKE_ID=ifelse(LAKE_ID=="0101RES5772","1301CRO1033",LAKE_ID),
+         LAKE_ID=ifelse(LAKE_ID=="0902SAI0156A","0902WHI0158",LAKE_ID))
+write.csv(sites,file="Probability_Based_Sites_2020_2021.csv",row.names=FALSE)

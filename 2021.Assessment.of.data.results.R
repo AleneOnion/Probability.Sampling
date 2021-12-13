@@ -84,6 +84,12 @@ wqs_violations <- stayCALM::wqs_violations(
   .tmdl_df = stayCALM::tmdl_df
 )
 exceedances<-wqs_violations$exceedance_summary
+#pull in lake id
+lakes<-new_df %>% select(LAKE_ID,seg_id) %>% distinct()
+exceedances<-merge(exceedances,lakes,by=c('seg_id'),all=TRUE)
+exceedances<-exceedances %>% select(-seg_id) %>% 
+  filter(use=="fishing") %>% 
+  mutate(n_exceedances=ifelse(n_exceedances>0,1,n_exceedances))
 
 #write the data frame for Sabrina to use later
 write.csv(exceedances,file="for.sabrina.probability.data.excursions.csv",row.names=FALSE)
