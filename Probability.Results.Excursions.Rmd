@@ -211,7 +211,7 @@ results <- results %>%
   mutate(Category="Non-Excursions") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb)
 
-results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","fully supporting"))
+results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","all parameters"))
 
 #side by side plots
 print(ggplot(results,aes(x=Indicator,y=pct)) +
@@ -224,6 +224,6 @@ print(ggplot(results,aes(x=Indicator,y=pct)) +
   #       strip.placement = "outside",
   #       axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
   #       legend.position = "none") +
-  labs(y="Percent of total",x="Fully supporting fishing use"))
+  labs(y="Percent of total",x="Parameter",title="NYS Ponded Waters Supporting Fishing Use"))
 
 ```
