@@ -1,0 +1,43 @@
+---
+title: "Probability Sampling Results 2021"
+author: "Alene Onion and Tony Olsen of USEPA (updated by Sabrina Xie)"
+date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
+output: html_document
+---
+
+```{r GlobalOptions}
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(huxtable)
+library(ggplot2)
+library(lubridate)
+```
+
+
+This script uses EPA's SPsurvey package to estimate how many of NYS ponded waters have "excursions" from NY StayCALM water quality standards based on the results of 2020-2021 probability-based sampling.
+
+```{r}
+
+#read in data on excursions
+excursions <- read.csv("probability.data.excursions.csv")
+excursions <- excursions %>% 
+  select(parameter,n_exceedances,LAKE_ID) %>% 
+  spread(parameter,n_exceedances,fill = NA)
+
+#read in data on sites
+sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
+sites<-sites %>% 
+  rename(siteID=SITE_ID,
+         xcoord=LON_DD83,
+         ycoord=LAT_DD83,
+         Eval_Status=EvalStatus) %>% 
+  #removing sites that we haven't yet evaluated
+  filter(Eval_Status!="") %>% 
+  mutate(Eval_Status=trimws(Eval_Status))
+
+att <- merge(sites,excursions,by=c(SITE_ID=LAKE_ID))
