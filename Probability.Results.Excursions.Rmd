@@ -10,8 +10,6 @@ options(knitr.duplicate.label = 'allow')
 ```
 
 ```{r setup, include=FALSE, message=FALSE, warning=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
-
 library(tidyverse)
 library(huxtable)
 library(ggplot2)
@@ -27,7 +25,8 @@ This script uses EPA's SPsurvey package to estimate how many of NYS ponded water
 excursions <- read.csv("probability.data.excursions.csv")
 excursions <- excursions %>% 
   select(parameter,n_exceedances,LAKE_ID) %>% 
-  spread(parameter,n_exceedances,fill = NA)
+  spread(parameter,n_exceedances,fill = 0) %>% 
+  mutate(LAKE_ID=toupper(LAKE_ID))
 
 #read in data on sites
 sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
@@ -40,4 +39,195 @@ sites<-sites %>%
   filter(Eval_Status!="") %>% 
   mutate(Eval_Status=trimws(Eval_Status))
 
-att <- merge(sites,excursions,by=c(SITE_ID=LAKE_ID))
+att <- merge(sites,excursions,by="LAKE_ID",all.x=TRUE)
+
+# Create a Target/NonTarget status variable
+att<-att %>% 
+  mutate(statusTNT="Target",
+         statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
+
+# Calculate the adjusted weights
+# The numerator is the original frame size value
+# the denominator is the actual number of samples evaluated in each category
+
+#number of lakes in each probability category
+cats <- data.frame(
+  PROB_CAT=unique(att$PROB_CAT),
+  n=as.double(1,2,3,4,5))
+
+for(i in 1:5){
+  b <- cats[i,1]
+  a <- att %>%
+    filter(PROB_CAT==b)
+  cats[i,2] <- nrow(a)
+}
+
+# add adjusted weight variable
+att<-att %>% 
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/21),
+         PROB_CAT==">50"~(500/33)))
+
+# should add up to 6437
+print(sum(att$WgtAdj))
+
+#number of evaluated lakes
+framesize_LC <- c("New York State"=116) 
+
+# Estimate TNT extent
+library(spsurvey)
+TNTextent <- cat_analysis(
+  dframe=att,
+  vars=c("statusTNT"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- TNTextent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate Target extent reasons
+target.att <- att[att$statusTNT=="Target",]
+TargetExtent <- cat_analysis(
+  dframe=target.att,
+  vars=c("Eval_Status"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- TargetExtent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate ammonia excursions
+Ammonia <- cat_analysis(
+  dframe=target.att,
+  vars=c("ammonia"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- Ammonia %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate CHLA excursions
+CHLA <- cat_analysis(
+  dframe=target.att,
+  vars=c("chlorophyll_a"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- CHLA %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate DO excursions
+DO <- cat_analysis(
+  dframe=target.att,
+  vars=c("dissolved_oxygen"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- DO %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate nitrite excursions
+nitrite <- cat_analysis(
+  dframe=target.att,
+  vars=c("nitrite"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- nitrite %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate pH excursions
+ph <- cat_analysis(
+  dframe=target.att,
+  vars=c("ph"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- ph %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Estimate phosphorus excursions
+PHOS <- cat_analysis(
+  dframe=target.att,
+  vars=c("phosphorus"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- PHOS %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+results <- rbind(Ammonia,CHLA,DO,nitrite,ph,PHOS)
+
+totals <- results %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U) %>% 
+  filter(Category=="Total")
+
+results <- merge(results,totals,by=c('Indicator'),all.x = TRUE)
+results <- results %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  rename(Category=Category.x) %>% 
+  filter(Category!="Total") %>% 
+  mutate(Category=case_when(
+    Category=="0" ~ "Non-Excursions",
+    Category=="1" ~ "Excursions")) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb)
+
+results$Category <- factor(results$Category, levels=c("Non-Excursions", "Excursions"))
+
+#side by side plots
+print(ggplot(results,aes(x=Category,y=pct,fill=Category)) +
+  geom_bar(stat = "identity") +
+  geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2,position=position_dodge(width=0.2)) +
+  ylim(0,130)+
+  facet_grid( ~ Indicator, switch="x") +
+  theme(panel.spacing = unit(0, "lines"),
+        strip.background = element_blank(),
+        strip.placement = "outside",
+        axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+        legend.position = "none") +
+  labs(title="NYS WQS Excursions",y="Percent of Total",x="WQS"))
+
+#stacked plots
+print(ggplot(results,aes(x=Indicator,y=pct,fill=Category)) +
+  geom_bar(stat = "identity", position="stack") +
+  labs(title="NYS WQS Excursions",y="Percent of Total",x="WQS"))
+
+```
