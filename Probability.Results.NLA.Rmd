@@ -556,14 +556,17 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
 ```{r maps, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 
 #read in lat/long for lakes
-ny.locs <- read.csv("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/Probability_Based_Sites_2020_2021.csv") %>% 
+ny.locs <- read.csv("Probability_Based_Sites_2020_2021.csv") %>% 
   filter(EvalStatus=="Target_Sampled ") %>% 
   select(LAT_DD83,LON_DD83) %>% 
   rename(YCOORD=LAT_DD83,
          XCOORD=LON_DD83) %>% 
   mutate(study="NY")
-nla.locs <- sites %>% 
-  select(XCOORD,YCOORD) %>% 
+nla.locs <- read.csv("nla_2017_site_information-data.csv") %>% 
+  filter(AG_ECO9=="NAP",AREA_HA>2.63) %>% 
+  select(LAT_DD83,LON_DD83) %>%
+  rename(YCOORD=LAT_DD83,
+         XCOORD=LON_DD83) %>% 
   mutate(study="NLA")
 
 locs <- rbind(ny.locs,nla.locs)
