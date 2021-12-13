@@ -67,21 +67,12 @@ oxygen <- oxygen %>%
 sites <- read.csv("nla_2017_site_information-data.csv")
 
 sites <- sites %>% 
-  filter(AREA_HA>2.63) %>% 
-  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
-  rename(ycoord=LAT_DD83,
-         xcoord=LON_DD83)
-
-cats <- data.frame(
-  AREA_CAT6=unique(sites$AREA_CAT6),
-  n=as.double(1,2,3,4,5))
-
-for(i in 1:5){
-  b <- cats[i,1]
-  a <- sites %>%
-    filter(AREA_CAT6==b)
-  cats[i,2] <- nrow(a)
-}
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
 
 att <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
 att <- merge(att,sites,by=c("UID","SITE_ID"))
@@ -121,6 +112,8 @@ att<-att %>%
     between(OXYGEN, 3, 5) ~ "Fair",
     OXYGEN>=5 ~ "Good"))
 
+framesize_LC <- c("EPA"=4271) 
+
 ```
 
 ## Analysis
@@ -129,38 +122,6 @@ The start of the NYSAnalysis code from Tony Olsen
 
 The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
 
-```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-
-# Calculate the adjusted weights
-# The numerator is the original frame size value
-# the denominator is the actual number of samples evaluated in each category
-
-#number of lakes in each probability category
-cats <- data.frame(
-  AREA_CAT6=unique(att$AREA_CAT6),
-  n=as.double(1,2,3,4,5))
-
-for(i in 1:5){
-  b <- cats[i,1]
-  a <- att %>%
-    filter(AREA_CAT6==b)
-  cats[i,2] <- nrow(a)
-}
-
-# add adjusted weight variable
-att<-att %>% 
-  mutate(WgtAdj=case_when(
-         AREA_CAT6=="(1,4]"~(478/67),
-         AREA_CAT6=="(4,10]"~(1184/188),
-         AREA_CAT6=="(10,20]"~(1002/211),
-         AREA_CAT6=="(20,50]"~(738/237),
-         AREA_CAT6==">50"~(869/357)))
-
-print(sum(att$WgtAdj))
-
-framesize_LC <- c("EPA"=4271) 
-
-```
 ## Comparison to NYS thresholds
 
 The following code actually performs the analysis. It uses the number of sampled lakes in each trophic category (both for phosphorus and chlorophyll) to estimate the ratio of the 2583 lakes we could have sampled are eutrophic, mesotrophic, or eutrophic. 
@@ -177,19 +138,19 @@ library(spsurvey)
 CatExtent2 <- cat_analysis(
   dframe=att,
   vars=c("chla_trophic","phos_trophic"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 forplot2<-CatExtent2 %>% 
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
          pct_ucb=UCB95Pct.P) %>% 
+  filter(Subpopulation=="yes",Category!="Total") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
          Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
@@ -300,19 +261,19 @@ The following code performs the analysis against EPA's condition thresholds as u
 CatExtent <- cat_analysis(
   dframe=att,
   vars=c("TP_threshold","CHLA_threshold","TN_threshold"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 forplot<-CatExtent %>% 
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
          pct_ucb=UCB95Pct.P) %>% 
+  filter(Subpopulation=="yes",Category!="Total") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="CHLA_threshold","ChlA",Indicator),
          Indicator=ifelse(Indicator=="TP_threshold","Phosphorus",Indicator),
@@ -345,11 +306,11 @@ Below, the analysis is done for each dissolved oxygen condition category.
 DOextent <- cat_analysis(
   dframe=att,
   vars=c("d.oxygen"),
-  subpops = ,
+  subpops = "include",
   siteID = "SITE_ID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
 
 #quickly calculate the percentages
 totals<-DOextent %>% 
@@ -361,10 +322,10 @@ DOextent<-merge(DOextent,totals,by=c('Indicator','Category'),all.x = TRUE)
 forplot4<-DOextent %>% 
   mutate(pct=Estimate.P,
          pct_lcb=LCB95Pct.P,
-         pct_ucb=UCB95Pct.P) %>% 
+         pct_ucb=UCB95Pct.P) %>%
+  filter(Category!="Total",Subpopulation=="yes") %>% 
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
-  filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="d.oxygen","Dissolved Oxygen",Indicator))
 
@@ -423,8 +384,8 @@ frame<-att %>%
   mutate(percentage=as.numeric(percentage),
          size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
 
-ggplot(frame, aes(x=size_category,y=percentage,color=study)) +
-  geom_point(stat = "identity", size=2)+
+ggplot(frame, aes(x=study,y=percentage,fill=size_category)) +
+  geom_bar(stat = "identity", position="stack")+
   ylim(0,100)+
   labs(title="Size classes in NLA national vs. Northern Appalachian vs. NY",y="Percent of Total",x="Size Category (hectares)")
 
@@ -440,57 +401,57 @@ forplot6<-forplot %>%
   add_row(Indicator="ChlA", #NAP results
           Category="Good",
           study="NAP",
-          percent=52.39,
-          pct_lcb=45.11,
-          pct_ucb=59.67) %>% 
+          percent=73.22,
+          pct_lcb=64.45,
+          pct_ucb=81.99) %>% 
   add_row(Indicator="ChlA",
           Category="Fair",
           study="NAP",
-          percent=16.62,
-          pct_lcb=10.62,
-          pct_ucb=22.62) %>% 
+          percent=7.96,
+          pct_lcb=3.68,
+          pct_ucb=12.23) %>% 
   add_row(Indicator="ChlA",
           Category="Poor",
           study="NAP",
-          percent=30.99,
-          pct_lcb=24.29,
-          pct_ucb=37.69) %>% 
+          percent=18.82,
+          pct_lcb=11.26,
+          pct_ucb=26.38) %>% 
   add_row(Indicator="Phosphorus",
           Category="Good",
           study="NAP",
-          percent=56.16,
-          pct_lcb=48.77,
-          pct_ucb=63.54) %>% 
+          percent=64.20,
+          pct_lcb=53.89,
+          pct_ucb=74.51) %>% 
   add_row(Indicator="Phosphorus",
           Category="Fair",
           study="NAP",
-          percent=25.50,
-          pct_lcb=18.64,
-          pct_ucb=32.36) %>% 
+          percent=20.81,
+          pct_lcb=12.76,
+          pct_ucb=28.85) %>% 
   add_row(Indicator="Phosphorus",
           Category="Poor",
           study="NAP",
-          percent=21.27,
-          pct_lcb=15.40,
-          pct_ucb=27.15) %>% 
+          percent=15.00,
+          pct_lcb=8.25,
+          pct_ucb=21.74) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Good",
           study="NAP",
-          percent=59.48,
-          pct_lcb=52.63,
-          pct_ucb=66.33) %>% 
+          percent=66.41,
+          pct_lcb=55.32,
+          pct_ucb=77.50) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Fair",
           study="NAP",
-          percent=25.50,
-          pct_lcb=18.64,
-          pct_ucb=32.36) %>% 
+          percent=25.15,
+          pct_lcb=13.57,
+          pct_ucb=36.73) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Poor",
           study="NAP",
-          percent=15.01,
-          pct_lcb=9.70,
-          pct_ucb=20.32) %>% 
+          percent=8.44,
+          pct_lcb=4.23,
+          pct_ucb=12.65) %>% 
   add_row(Indicator="ChlA", #nys prob results
           Category="Good",
           study="NY",
@@ -566,21 +527,21 @@ forplot6<-forplot %>%
   add_row(Indicator="Dissolved Oxygen", #NLA NAP prob
           Category="Good",
           study="NAP",
-          percent=88.79,
-          pct_lcb=83.57,
-          pct_ucb=94.01) %>% 
+          percent=92.11,
+          pct_lcb=87.00,
+          pct_ucb=97.21) %>% 
   add_row(Indicator="Dissolved Oxygen",
           Category="Fair",
           study="NAP",
-          percent=6.89,
-          pct_lcb=2.77,
-          pct_ucb=11.02) %>% 
+          percent=5.36,
+          pct_lcb=0.85,
+          pct_ucb=9.87) %>% 
   add_row(Indicator="Dissolved Oxygen",
           Category="Poor",
           study="NAP",
-          percent=4.32,
-          pct_lcb=0.89,
-          pct_ucb=7.74) %>% 
+          percent=2.53,
+          pct_lcb=0.08,
+          pct_ucb=4.98) %>% 
   add_row(Indicator="Dissolved Oxygen", #ny prob
           Category="Good",
           study="NY",
@@ -633,7 +594,11 @@ nap.locs <- read.csv("nla_2017_site_information-data.csv") %>%
   select(xcoord,ycoord) %>% 
   mutate(study="NAP")
 
-nla.locs <- sites %>% 
+nla.locs <- read.csv("nla_2017_site_information-data.csv") %>% 
+  filter(AREA_HA > 2.63) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
+  rename(ycoord=LAT_DD83,
+         xcoord=LON_DD83) %>% 
   select(xcoord,ycoord) %>% 
   mutate(study="NLA")
 
@@ -653,11 +618,3 @@ locs.map <- ggplot() +
 
 print(locs.map)
 ```
-
-## Questions
-
-- Why are population sizes across size categories the same?
-
-- Why are our error bars bigger than theirs?
-
-- Should the weight adjustment be calculated using the whole population or the filtered subset?
