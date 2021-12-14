@@ -1,0 +1,620 @@
+---
+title: "Probability Sampling Results 2021"
+author: "Alene Onion and Tony Olsen of USEPA (modified by Sabrina Xie)"
+date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
+output: html_document
+---
+
+```{r GlobalOptions}
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# {.tabset}
+Doing the probability sampling results analysis with NLA data of lakes in Northern Appalachians with area >6.5 acres
+
+## Prepping data
+
+Merging relevant raw data files and filtering
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+################################################################################################################
+#reading in and formatting raw data
+################################################################################################################
+
+library(tidyverse)
+library(huxtable)
+library(ggplot2)
+library(lubridate)
+
+# read in NLA data
+setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
+
+chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
+
+chem <- chem %>% 
+  filter(ANALYTE %in% c("NTL","CHLA","PTL"),
+         NARS_FLAG == "") %>% 
+  select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
+  pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
+  rename(TN=NTL,TP=PTL)
+
+oxygen <- read.csv("nla_2017_profile-data.csv")
+
+oxygen <- oxygen %>% 
+  select(UID,SITE_ID,DATE_COL,DEPTH,OXYGEN) %>% 
+  # dissolved oxygen:
+  # keep DO values between 0 and 2m depth
+  mutate(keep=case_when(
+    DEPTH <= 2 ~ "yes",
+    DEPTH > 2 ~ "no")) %>%
+  filter(keep=="yes") %>%
+  select(-keep)
+
+# mean DO for each lake
+DO <- aggregate(oxygen$OXYGEN,list(oxygen$SITE_ID,oxygen$DATE_COL),FUN=mean)
+# add back in
+oxygen <- merge(oxygen,DO,by.x=c("SITE_ID","DATE_COL"),by.y=c("Group.1","Group.2"),all.x=TRUE)
+oxygen$x <- as.numeric(oxygen$x)
+oxygen <- oxygen %>% 
+  select(-c(DEPTH,OXYGEN)) %>%
+  rename(OXYGEN=x) %>% 
+  distinct()
+
+sites <- read.csv("nla_2017_site_information-data.csv")
+
+sites <- sites %>% 
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
+
+att <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
+att <- merge(att,sites,by=c("UID","SITE_ID"))
+att$CHLA <- as.numeric(att$CHLA)
+att$TN <- as.numeric(att$TN)
+att$TP <- as.numeric(att$TP)
+att$OXYGEN <- as.numeric(att$OXYGEN)
+  
+# selecting parameters and adding trophic status
+
+att<-att %>% 
+  # trophic status
+  mutate(phos_trophic=case_when(
+    TP<=10 ~ "oligotrophic",
+    between(TP,10,20) ~ "mesotrophic",
+    TP>=20 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    CHLA<=2 ~ "oligotrophic",
+    between(CHLA,2,8) ~ "mesotrophic",
+    CHLA>=8 ~ "eutrophic")) %>%
+  # EPA thresholds
+  mutate(TP_threshold=case_when(
+    TP<=16 ~ "Good",
+    between(TP, 16, 27.9) ~ "Fair",
+    TP>=27.9 ~ "Poor")) %>%
+  mutate(TN_threshold=case_when(
+    TN<=0.428 ~ "Good",
+    between(TN, 0.428, 0.655) ~ "Fair",
+    TN>=0.655 ~ "Poor")) %>%
+  mutate(CHLA_threshold=case_when(
+    CHLA<=4.52 ~ "Good",
+    between(CHLA, 4.52, 8.43) ~ "Fair",
+    CHLA>=8.43 ~ "Poor")) %>%
+  # dissolved oxygen
+  mutate(d.oxygen=case_when(
+    OXYGEN<=3 ~ "Poor",
+    between(OXYGEN, 3, 5) ~ "Fair",
+    OXYGEN>=5 ~ "Good"))
+
+framesize_LC <- c("EPA"=4271) 
+
+```
+
+## Analysis
+
+The start of the NYSAnalysis code from Tony Olsen
+
+The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
+
+## Comparison to NYS thresholds
+
+The following code actually performs the analysis. It uses the number of sampled lakes in each trophic category (both for phosphorus and chlorophyll) to estimate the ratio of the 2583 lakes we could have sampled are eutrophic, mesotrophic, or eutrophic. 
+
+
+PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasonable assumption but it's obviously preferable to sample all the lakes in the list to avoid this uncertainty. 
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+# Trophic classes
+# Estimate assessment result
+
+library(spsurvey)
+
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("chla_trophic","phos_trophic"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Subpopulation=="yes",Category!="Total") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
+         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+forplot2$Category <- factor(forplot2$Category, levels=c("oligotrophic", "mesotrophic", "eutrophic"))
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of trophic classes across Eastern Highland ponded waters",y="Percent of Total",x="Trophic status")
+
+forplot5<-forplot2 %>% 
+  spread(percent,results) %>% 
+  rename(percent=pct) %>% 
+  mutate(study="NLA") %>% 
+  add_row(Indicator="Trophic Status from ChlA", #lmas
+          Category="eutrophic",
+          study="LMAS",
+          percent=((215/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="mesotrophic",
+          study="LMAS",
+          percent=((182/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="oligotrophic",
+          study="LMAS",
+          percent=((76/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="eutrophic",
+          study="LMAS",
+          percent=((211/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="mesotrophic",
+          study="LMAS",
+          percent=((141/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="oligotrophic",
+          study="LMAS",
+          percent=((121/473)*100)) %>% 
+  add_row(Indicator="Trophic Status from ChlA", #ny prob
+          Category="eutrophic",
+          study="NYProb",
+          percent=9.42,
+          pct_lcb=2.95,
+          pct_ucb=15.89) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="mesotrophic",
+          study="NYProb",
+          percent=69.43,
+          pct_lcb=44.35,
+          pct_ucb=94.50) %>% 
+  add_row(Indicator="Trophic Status from ChlA",
+          Category="oligotrophic",
+          study="NYProb",
+          percent=21.15,
+          pct_lcb=5.97,
+          pct_ucb=36.33) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="eutrophic",
+          study="NYProb",
+          percent=26.73,
+          pct_lcb=11.26,
+          pct_ucb=42.2)  %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="mesotrophic",
+          study="NYProb",
+          percent=34.85,
+          pct_lcb=12.43,
+          pct_ucb=57.27) %>% 
+  add_row(Indicator="Trophic Status from Phosphorus",
+          Category="oligotrophic",
+          study="NYProb",
+          percent=53.96,
+          pct_lcb=32.36,
+          pct_ucb=75.56) %>% 
+  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
+         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+  
+
+ggplot(forplot5, aes(x=Category)) +
+  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
+  
+```
+
+## Comparison to NLA thresholds
+
+The following code performs the analysis against EPA's condition thresholds as used in the National Lakes Assessments. It uses the number of sampled lakes in each condition category (for total phosphorus, total nitrogen and chlorophyll) to estimate the ratio of all lakes in good, fair and poor condition.
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+
+# EPA nutrient threshold
+#  Estimate assessment result
+CatExtent <- cat_analysis(
+  dframe=att,
+  vars=c("TP_threshold","CHLA_threshold","TN_threshold"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot<-CatExtent %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Subpopulation=="yes",Category!="Total") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="CHLA_threshold","ChlA",Indicator),
+         Indicator=ifelse(Indicator=="TP_threshold","Phosphorus",Indicator),
+         Indicator=ifelse(Indicator=="TN_threshold","Total Nitrogen",Indicator))
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+table$Category <- factor(table$Category, levels=c("Good", "Fair", "Poor"))
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of Northern Appalachians ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
+```
+
+Below, the analysis is done for each dissolved oxygen condition category.
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+# Dissolved oxygen
+#  Estimate assessment result
+DOextent <- cat_analysis(
+  dframe=att,
+  vars=c("d.oxygen"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+#quickly calculate the percentages
+totals<-DOextent %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- DOextent$Estimate.U[4]
+DOextent<-merge(DOextent,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot4<-DOextent %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>%
+  filter(Category!="Total",Subpopulation=="yes") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="d.oxygen","Dissolved Oxygen",Indicator))
+
+table <- forplot4 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+table$Category <- factor(table$Category, levels=c("Good","Fair","Poor"))
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of dissolved oxygen conditions across Northern Appalachians ponded waters",y="Percent of total",x="Condition category")
+```
+
+## Comparison to NY probability and LMAS
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+#Plotting data frame distribution as well as NYS sample distribution collected since 2010
+#LMAS numbers retrieved in 2020
+
+frame<-att %>% 
+  select(AREA_CAT6) %>% 
+  rename(size_category=AREA_CAT6) %>% 
+  distinct() %>%
+  mutate(NAP = case_when(
+    endsWith(size_category, "(1,4]") ~ ((40/490)*100),
+    endsWith(size_category, "(4,10]") ~ ((96/490)*100),
+    endsWith(size_category, "(10,20]") ~ ((115/490)*100),
+    endsWith(size_category, "(20,50]") ~ ((105/490)*100),
+    endsWith(size_category, ">50") ~ ((134/490)*100))
+  ) %>%
+  mutate(NY = case_when(
+    endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
+    endsWith(size_category, "(4,10]") ~ ((2490/6437)*100),
+    endsWith(size_category, "(10,20]") ~ ((1003/6437)*100),
+    endsWith(size_category, "(20,50]") ~ ((616/6437)*100),
+    endsWith(size_category, ">50") ~ ((500/6437)*100))
+    ) %>%
+  mutate(NLA = case_when(
+    endsWith(size_category, "(1,4]") ~ ((67/4271)*100),
+    endsWith(size_category, "(4,10]") ~ ((188/4271)*100),
+    endsWith(size_category, "(10,20]") ~ ((211/4271)*100),
+    endsWith(size_category, "(20,50]") ~ ((237/4271)*100),
+    endsWith(size_category, ">50") ~ ((357/4271)*100))) %>%
+  ungroup() %>%
+  gather(study,percentage,-size_category) %>% 
+  arrange(study,size_category) %>% 
+  mutate(percentage=as.numeric(percentage),
+         size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
+
+ggplot(frame, aes(x=study,y=percentage,fill=size_category)) +
+  geom_bar(stat = "identity", position="stack")+
+  ylim(0,100)+
+  labs(title="Size classes in NLA national vs. Northern Appalachian vs. NY",y="Percent of Total",x="Size Category (hectares)")
+
+
+```
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+forplot6<-forplot %>% 
+  spread(percent,results) %>% 
+  rename(percent=pct) %>% 
+  mutate(study="NLA") %>% 
+  add_row(Indicator="ChlA", #NAP results
+          Category="Good",
+          study="NAP",
+          percent=73.22,
+          pct_lcb=64.45,
+          pct_ucb=81.99) %>% 
+  add_row(Indicator="ChlA",
+          Category="Fair",
+          study="NAP",
+          percent=7.96,
+          pct_lcb=3.68,
+          pct_ucb=12.23) %>% 
+  add_row(Indicator="ChlA",
+          Category="Poor",
+          study="NAP",
+          percent=18.82,
+          pct_lcb=11.26,
+          pct_ucb=26.38) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Good",
+          study="NAP",
+          percent=64.20,
+          pct_lcb=53.89,
+          pct_ucb=74.51) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Fair",
+          study="NAP",
+          percent=20.81,
+          pct_lcb=12.76,
+          pct_ucb=28.85) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Poor",
+          study="NAP",
+          percent=15.00,
+          pct_lcb=8.25,
+          pct_ucb=21.74) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Good",
+          study="NAP",
+          percent=66.41,
+          pct_lcb=55.32,
+          pct_ucb=77.50) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Fair",
+          study="NAP",
+          percent=25.15,
+          pct_lcb=13.57,
+          pct_ucb=36.73) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Poor",
+          study="NAP",
+          percent=8.44,
+          pct_lcb=4.23,
+          pct_ucb=12.65) %>% 
+  add_row(Indicator="ChlA", #nys prob results
+          Category="Good",
+          study="NY",
+          percent=44.82,
+          pct_lcb=29.56,
+          pct_ucb=60.08) %>% 
+  add_row(Indicator="ChlA",
+          Category="Fair",
+          study="NY",
+          percent=33.57,
+          pct_lcb=12.23,
+          pct_ucb=54.91) %>% 
+  add_row(Indicator="ChlA",
+          Category="Poor",
+          study="NY",
+          percent=8.16,
+          pct_lcb=2.55,
+          pct_ucb=13.76) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Good",
+          study="NY",
+          percent=67.55,
+          pct_lcb=43.96,
+          pct_ucb=91.14) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Fair",
+          study="NY",
+          percent=12.96,
+          pct_lcb=4.48,
+          pct_ucb=21.44) %>% 
+  add_row(Indicator="Phosphorus",
+          Category="Poor",
+          study="NY",
+          percent=19.49,
+          pct_lcb=6.29,
+          pct_ucb=32.69) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Good",
+          study="NY",
+          percent=44.45,
+          pct_lcb=26.84,
+          pct_ucb=62.06) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Fair",
+          study="NY",
+          percent=7.74,
+          pct_lcb=1.76,
+          pct_ucb=13.73) %>% 
+  add_row(Indicator="Total Nitrogen",
+          Category="Poor",
+          study="NY",
+          percent=17.1,
+          pct_lcb=5.02,
+          pct_ucb=29.17) %>% 
+  add_row(Indicator="Dissolved Oxygen", #NLA
+          Category="Good",
+          study="NLA",
+          percent=89.18,
+          pct_lcb=87.28,
+          pct_ucb=90.99) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Fair",
+          study="NLA",
+          percent=7.57,
+          pct_lcb=6.03,
+          pct_ucb=9.11) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Poor",
+          study="NLA",
+          percent=3.25,
+          pct_lcb=2.21,
+          pct_ucb=4.28) %>% 
+  add_row(Indicator="Dissolved Oxygen", #NLA NAP prob
+          Category="Good",
+          study="NAP",
+          percent=92.11,
+          pct_lcb=87.00,
+          pct_ucb=97.21) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Fair",
+          study="NAP",
+          percent=5.36,
+          pct_lcb=0.85,
+          pct_ucb=9.87) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Poor",
+          study="NAP",
+          percent=2.53,
+          pct_lcb=0.08,
+          pct_ucb=4.98) %>% 
+  add_row(Indicator="Dissolved Oxygen", #ny prob
+          Category="Good",
+          study="NY",
+          percent=44.08,
+          pct_lcb=27.75,
+          pct_ucb=60.41) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Fair",
+          study="NY",
+          percent=47.69,
+          pct_lcb=27.08,
+          pct_ucb=68.3) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Poor",
+          study="NY",
+          percent=8.23,
+          pct_lcb=0,
+          pct_ucb=19.99) %>% 
+  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
+         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+  
+
+forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor"))
+
+ggplot(forplot6, aes(x=Category,fill=study)) +
+  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="EPA condition categories in  NLA vs. Northern Appalachian vs. NY",y="Percent of Total",x="EPA Condition Classes")
+```
+
+## Sites map
+
+```{r maps, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+#read in lat/long for lakes
+ny.locs <- read.csv("Probability_Based_Sites_2020_2021.csv") %>% 
+  select(LAT_DD83,LON_DD83) %>% 
+  rename(xcoord=LON_DD83,
+         ycoord=LAT_DD83) %>% 
+  mutate(study="NY")
+
+nap.locs <- read.csv("nla_2017_site_information-data.csv") %>% 
+  filter(AREA_HA > 2.63,
+         AG_ECO9 == "NAP") %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
+  rename(ycoord=LAT_DD83,
+         xcoord=LON_DD83) %>% 
+  select(xcoord,ycoord) %>% 
+  mutate(study="NAP")
+
+nla.locs <- read.csv("nla_2017_site_information-data.csv") %>% 
+  filter(AREA_HA > 2.63) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,LAT_DD83,LON_DD83) %>% 
+  rename(ycoord=LAT_DD83,
+         xcoord=LON_DD83) %>% 
+  select(xcoord,ycoord) %>% 
+  mutate(study="NLA")
+
+locs <- rbind(ny.locs,nla.locs,nap.locs)
+
+#fetch map
+library(ggmap)
+library(maps)
+
+states <- map_data("state")
+
+locs.map <- ggplot() + 
+  geom_polygon(data=states,aes(x = long, y = lat, group = group), color = "white") + 
+  coord_fixed(1.3) +
+  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=study),shape=4, size=0.5)+
+  guides(fill=FALSE)  # do this to leave off the color legend
+
+print(locs.map)
+```
