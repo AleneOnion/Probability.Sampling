@@ -204,39 +204,39 @@ forplot5<-forplot2 %>%
   add_row(Indicator="Trophic Status from ChlA", #ny prob
           Category="eutrophic",
           study="NYProb",
-          percent=9.42,
-          pct_lcb=2.95,
-          pct_ucb=15.89) %>% 
+          percent=9.18,
+          pct_lcb=2.88,
+          pct_ucb=15.48) %>% 
   add_row(Indicator="Trophic Status from ChlA",
           Category="mesotrophic",
           study="NYProb",
-          percent=69.43,
-          pct_lcb=44.35,
-          pct_ucb=94.50) %>% 
+          percent=70.32,
+          pct_lcb=45.82,
+          pct_ucb=94.82) %>% 
   add_row(Indicator="Trophic Status from ChlA",
           Category="oligotrophic",
           study="NYProb",
-          percent=21.15,
-          pct_lcb=5.97,
-          pct_ucb=36.33) %>% 
+          percent=20.50,
+          pct_lcb=5.86,
+          pct_ucb=35.13) %>% 
   add_row(Indicator="Trophic Status from Phosphorus",
           Category="eutrophic",
           study="NYProb",
-          percent=26.73,
-          pct_lcb=11.26,
-          pct_ucb=42.2)  %>% 
+          percent=22.48,
+          pct_lcb=9.56,
+          pct_ucb=35.40)  %>% 
   add_row(Indicator="Trophic Status from Phosphorus",
           Category="mesotrophic",
           study="NYProb",
-          percent=34.85,
-          pct_lcb=12.43,
-          pct_ucb=57.27) %>% 
+          percent=32.08,
+          pct_lcb=12.77,
+          pct_ucb=51.38) %>% 
   add_row(Indicator="Trophic Status from Phosphorus",
           Category="oligotrophic",
           study="NYProb",
-          percent=53.96,
-          pct_lcb=32.36,
-          pct_ucb=75.56) %>% 
+          percent=45.44,
+          pct_lcb=27.37,
+          pct_ucb=63.52) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
@@ -373,11 +373,11 @@ frame<-att %>%
     endsWith(size_category, ">50") ~ ((500/6437)*100))
     ) %>%
   mutate(NLA = case_when(
-    endsWith(size_category, "(1,4]") ~ ((67/4271)*100),
-    endsWith(size_category, "(4,10]") ~ ((188/4271)*100),
-    endsWith(size_category, "(10,20]") ~ ((211/4271)*100),
-    endsWith(size_category, "(20,50]") ~ ((237/4271)*100),
-    endsWith(size_category, ">50") ~ ((357/4271)*100))) %>%
+    endsWith(size_category, "(1,4]") ~ ((478/4271)*100),
+    endsWith(size_category, "(4,10]") ~ ((1184/4271)*100),
+    endsWith(size_category, "(10,20]") ~ ((1002/4271)*100),
+    endsWith(size_category, "(20,50]") ~ ((738/4271)*100),
+    endsWith(size_category, ">50") ~ ((869/4271)*100))) %>%
   ungroup() %>%
   gather(study,percentage,-size_category) %>% 
   arrange(study,size_category) %>% 
@@ -455,57 +455,57 @@ forplot6<-forplot %>%
   add_row(Indicator="ChlA", #nys prob results
           Category="Good",
           study="NY",
-          percent=44.82,
-          pct_lcb=29.56,
-          pct_ucb=60.08) %>% 
+          percent=50.01,
+          pct_lcb=33.05,
+          pct_ucb=66.97) %>% 
   add_row(Indicator="ChlA",
           Category="Fair",
           study="NY",
-          percent=33.57,
-          pct_lcb=12.23,
-          pct_ucb=54.91) %>% 
+          percent=40.81,
+          pct_lcb=16.57,
+          pct_ucb=65.05) %>% 
   add_row(Indicator="ChlA",
           Category="Poor",
           study="NY",
-          percent=8.16,
-          pct_lcb=2.55,
-          pct_ucb=13.76) %>% 
+          percent=9.18,
+          pct_lcb=2.88,
+          pct_ucb=15.48) %>% 
   add_row(Indicator="Phosphorus",
           Category="Good",
           study="NY",
-          percent=67.55,
-          pct_lcb=43.96,
-          pct_ucb=91.14) %>% 
+          percent=65.59,
+          pct_lcb=42.85,
+          pct_ucb=88.33) %>% 
   add_row(Indicator="Phosphorus",
           Category="Fair",
           study="NY",
-          percent=12.96,
-          pct_lcb=4.48,
-          pct_ucb=21.44) %>% 
+          percent=15.44,
+          pct_lcb=5.85,
+          pct_ucb=25.04) %>% 
   add_row(Indicator="Phosphorus",
           Category="Poor",
           study="NY",
-          percent=19.49,
-          pct_lcb=6.29,
-          pct_ucb=32.69) %>% 
+          percent=18.97,
+          pct_lcb=6.22,
+          pct_ucb=31.72) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Good",
           study="NY",
-          percent=44.45,
-          pct_lcb=26.84,
-          pct_ucb=62.06) %>% 
+          percent=61.49,
+          pct_lcb=37.27,
+          pct_ucb=85.71) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Fair",
           study="NY",
-          percent=7.74,
-          pct_lcb=1.76,
-          pct_ucb=13.73) %>% 
+          percent=14.95,
+          pct_lcb=4.34,
+          pct_ucb=25.56) %>% 
   add_row(Indicator="Total Nitrogen",
           Category="Poor",
           study="NY",
-          percent=17.1,
-          pct_lcb=5.02,
-          pct_ucb=29.17) %>% 
+          percent=23.57,
+          pct_lcb=6.99,
+          pct_ucb=40.14)  %>% 
   add_row(Indicator="Dissolved Oxygen", #NLA
           Category="Good",
           study="NLA",
