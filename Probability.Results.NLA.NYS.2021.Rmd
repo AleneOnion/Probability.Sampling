@@ -130,11 +130,27 @@ The following code actually performs the analysis. It uses the number of sampled
 PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasonable assumption but it's obviously preferable to sample all the lakes in the list to avoid this uncertainty. 
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-# Trophic classes
-# Estimate assessment result
 
 library(spsurvey)
 
+# Size classes
+SizeExtent <- cat_analysis(
+  dframe=att,
+  vars=c("AREA_CAT6"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+table <- SizeExtent %>% 
+  filter(Subpopulation=="yes") %>%
+  select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Trophic classes
+# Estimate assessment result
 CatExtent2 <- cat_analysis(
   dframe=att,
   vars=c("chla_trophic","phos_trophic"),
@@ -359,11 +375,11 @@ frame<-att %>%
   rename(size_category=AREA_CAT6) %>% 
   distinct() %>%
   mutate(NAP = case_when(
-    endsWith(size_category, "(1,4]") ~ ((40/490)*100),
-    endsWith(size_category, "(4,10]") ~ ((96/490)*100),
-    endsWith(size_category, "(10,20]") ~ ((115/490)*100),
-    endsWith(size_category, "(20,50]") ~ ((105/490)*100),
-    endsWith(size_category, ">50") ~ ((134/490)*100))
+    endsWith(size_category, "(1,4]") ~ ((1870/9727)*100),
+    endsWith(size_category, "(4,10]") ~ ((2380/9727)*100),
+    endsWith(size_category, "(10,20]") ~ ((1791/9727)*100),
+    endsWith(size_category, "(20,50]") ~ ((1695/9727)*100),
+    endsWith(size_category, ">50") ~ ((1991/9727)*100))
   ) %>%
   mutate(NY = case_when(
     endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
@@ -373,11 +389,11 @@ frame<-att %>%
     endsWith(size_category, ">50") ~ ((500/6437)*100))
     ) %>%
   mutate(NLA = case_when(
-    endsWith(size_category, "(1,4]") ~ ((478/4271)*100),
-    endsWith(size_category, "(4,10]") ~ ((1184/4271)*100),
-    endsWith(size_category, "(10,20]") ~ ((1002/4271)*100),
-    endsWith(size_category, "(20,50]") ~ ((738/4271)*100),
-    endsWith(size_category, ">50") ~ ((869/4271)*100))) %>%
+    endsWith(size_category, "(1,4]") ~ ((15723.70/72957.58)*100),
+    endsWith(size_category, "(4,10]") ~ ((20956.61/72957.58)*100),
+    endsWith(size_category, "(10,20]") ~ ((13494.61/72957.58)*100),
+    endsWith(size_category, "(20,50]") ~ ((11130.79/72957.58)*100),
+    endsWith(size_category, ">50") ~ ((11651.86/72957.58)*100))) %>%
   ungroup() %>%
   gather(study,percentage,-size_category) %>% 
   arrange(study,size_category) %>% 
