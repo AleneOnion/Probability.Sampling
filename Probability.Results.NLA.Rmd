@@ -114,6 +114,8 @@ att<-att %>%
 
 framesize_LC <- c("EPA"=5721) 
 
+
+
 ```
 
 ## Comparison to NYS thresholds
@@ -124,11 +126,26 @@ The following code actually performs the analysis. It uses the number of sampled
 PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasonable assumption but it's obviously preferable to sample all the lakes in the list to avoid this uncertainty. 
 
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-# Trophic classes
-# Estimate assessment result
+
 
 library(spsurvey)
 
+# Size classes
+SizeExtent <- cat_analysis(
+  dframe=att,
+  vars=c("AREA_CAT6"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+table <- SizeExtent %>% filter(Subpopulation=="yes") %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+# Trophic classes
+# Estimate assessment result
 CatExtent2 <- cat_analysis(
   dframe=att,
   vars=c("chla_trophic","phos_trophic"),
@@ -356,11 +373,11 @@ frame<-att %>%
   rename(size_category=AREA_CAT6) %>% 
   distinct() %>%
   mutate(NLA_Sites = case_when(
-    endsWith(size_category, "(1,4]") ~ ((40/490)*100),
-    endsWith(size_category, "(4,10]") ~ ((96/490)*100),
-    endsWith(size_category, "(10,20]") ~ ((115/490)*100),
-    endsWith(size_category, "(20,50]") ~ ((105/490)*100),
-    endsWith(size_category, ">50") ~ ((134/490)*100))
+    endsWith(size_category, "(1,4]") ~ ((1870/9727)*100),
+    endsWith(size_category, "(4,10]") ~ ((2380/9727)*100),
+    endsWith(size_category, "(10,20]") ~ ((1791/9727)*100),
+    endsWith(size_category, "(20,50]") ~ ((1695/9727)*100),
+    endsWith(size_category, ">50") ~ ((1991/9727)*100))
   ) %>%
   mutate(Probability_Sites = case_when(
     endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
@@ -521,22 +538,22 @@ forplot7<-forplot4 %>%
           percent=((10/486)*100)) %>% 
   add_row(Indicator="d.oxygen", #ny prob
           Category="Good",
-          study="NYProb",
-          percent=46.89,
-          pct_lcb=28.12,
-          pct_ucb=65.65) %>% 
+          study="NY",
+          percent=91.39,
+          pct_lcb=69.86,
+          pct_ucb=112.92) %>% 
   add_row(Indicator="d.oxygen",
           Category="Fair",
-          study="NYProb",
-          percent=20.45,
-          pct_lcb=7.86,
-          pct_ucb=33.04) %>% 
+          study="NY",
+          percent=1.25,
+          pct_lcb=0,
+          pct_ucb=3.36) %>% 
   add_row(Indicator="d.oxygen",
           Category="Poor",
-          study="NYProb",
-          percent=32.66,
-          pct_lcb=17.06,
-          pct_ucb=48.26) %>% 
+          study="NY",
+          percent=7.36,
+          pct_lcb=0,
+          pct_ucb=18.59) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
