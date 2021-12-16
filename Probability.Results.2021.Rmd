@@ -251,9 +251,9 @@ att<-att %>%
     `PH_epi`>=8.5 ~ "Alkaline")) %>% 
   #secchi
   mutate(secchi=case_when(
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eutrophic",
-    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Mesotrophic",
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligotrophic")) %>% 
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "eutrophic",
+    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "mesotrophic",
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "oligotrophic")) %>% 
   #zebra mussels
   mutate(zebra=case_when(
     CALCIUM_OW_TOTAL<=10 ~ "Not susceptible",
@@ -414,7 +414,7 @@ PLEAE NOTE: this presumes that the lakes we didn't sample were random. A reasona
 # Estimate assessment result
 CatExtent2 <- cat_analysis(
   dframe=att,
-  vars=c("chla_trophic","phos_trophic"),
+  vars=c("chla_trophic","phos_trophic","secchi"),
   subpops = ,
   siteID = "siteID",
   weight = "WgtAdj",
@@ -427,6 +427,7 @@ totals<-CatExtent2 %>%
   rename(total=Estimate.U)
 totals[totals$Indicator=="chla_trophic",3] <- CatExtent2$Estimate.U[4]
 totals[totals$Indicator=="phos_trophic",3] <- CatExtent2$Estimate.U[8]
+totals[totals$Indicator=="secchi",3] <- CatExtent2$Estimate.U[12]
 CatExtent2<-merge(CatExtent2,totals,by=c('Indicator','Category'),all.x = TRUE)
 
 forplot2<-CatExtent2 %>% 
@@ -438,7 +439,8 @@ forplot2<-CatExtent2 %>%
   filter(Category!="Total") %>% 
   gather(percent,results,-Indicator,-Category) %>% 
   mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
-         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
+         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator),
+         Indicator=ifelse(Indicator=="secchi","Trophic Status from Secchi",Indicator))
 
 table <- forplot2 %>% 
   spread(percent,results)  %>% 
@@ -510,7 +512,7 @@ ggplot(table,aes(x=Category,y=Percentage)) +
 # Estimate assessment result
 CatExtent2 <- cat_analysis(
   dframe=att,
-  vars=c("chla_trophic","phos_trophic"),
+  vars=c("chla_trophic","phos_trophic","secchi"),
   subpops = ,
   siteID = "siteID",
   weight = "WgtAdj",
@@ -557,52 +559,6 @@ ggplot(table,aes(x=Category,y=Percentage)) +
 ggplot(table,aes(x=Indicator,y=Percentage,fill=Category)) +
   geom_bar(stat = "identity",position="stack")+
   labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="Trophic status")
-
-##### Secchi #####
-#  Estimate assessment result
-secchi <- cat_analysis(
-  dframe=att,
-  vars=c("secchi"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-
-#quickly calculate the percentages
-totals<-secchi %>% 
-  select(Indicator,Category,Estimate.U) %>% 
-  rename(total=Estimate.U)
-totals$total <- secchi$Estimate.U[4]
-secchi<-merge(secchi,totals,by=c('Indicator','Category'),all.x = TRUE)
-
-forplt10<-secchi %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total") %>% 
-  gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="secchi","Nutrient category",Indicator))
-
-table <- forplt10 %>% 
-  spread(percent,results)  %>% 
-  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
-
-table$Category <- factor(table$Category, levels=c("Oligotrophic", "Mesotrophic", "Eutrophic"))
-
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-ggplot(table,aes(x=Category,y=Percentage)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Distribution of Secchi disk depths across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 
 ##### Zebra mussels #####
 #  Estimate assessment result
