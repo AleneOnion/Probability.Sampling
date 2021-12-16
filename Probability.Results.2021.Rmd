@@ -67,7 +67,9 @@ lab<-newdata %>%
                          "TRUE COLOR_OW_TOTAL",
                          "PH_DP_NA",
                          "SPECIFIC CONDUCTANCE_DP_NA",
-                         "TEMPERATURE_DP_NA")) %>%
+                         "TEMPERATURE_DP_NA",
+                         "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                         "CALCIUM_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -173,7 +175,9 @@ att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>%
                               "TRUE COLOR_OW_TOTAL",
                               "SPECIFIC CONDUCTANCE_epi",
                               "PH_epi",
-                              "DISSOLVED OXYGEN_epi")) %>% 
+                              "DISSOLVED OXYGEN_epi",
+                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                              "CALCIUM_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
 att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% 
@@ -186,7 +190,9 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
                               "TRUE COLOR_OW_TOTAL",
                               "SPECIFIC CONDUCTANCE_epi",
                               "PH_epi",
-                              "DISSOLVED OXYGEN_epi")) %>% 
+                              "DISSOLVED OXYGEN_epi",
+                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                              "CALCIUM_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
   
@@ -243,6 +249,16 @@ att<-att %>%
     `PH_epi`<=6.5 ~ "Acidic",
     between(`PH_epi`, 6.5, 8.5) ~ "Circumneutral",
     `PH_epi`>=8.5 ~ "Alkaline")) %>% 
+  #secchi
+  mutate(secchi=case_when(
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eutrophic",
+    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Mesotrophic",
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligotrophic")) %>% 
+  #zebra mussels
+  mutate(zebra=case_when(
+    CALCIUM_OW_TOTAL<=10 ~ "Not susceptible",
+    between(CALCIUM_OW_TOTAL, 10, 20) ~ "May be susceptible",
+    CALCIUM_OW_TOTAL>=20 ~ "Highly susceptible")) %>% 
   #cslap
   mutate(conductance=case_when(
     `SPECIFIC CONDUCTANCE_epi`<=125 ~ "Softwater",
@@ -279,17 +295,19 @@ m_occur <- data.frame(table(m_att$FID))
 m_att <- m_att[!duplicated(m_att$FID),]
 
 att <- m_att %>%
-  # # remove extra columns
-  # select(-c('CHLOROPHYLL A_OW_TOTAL',
-  #           'PHOSPHORUS, TOTAL_OW_TOTAL',
-  #           "MICROCYSTIN_OW_NA",
-  #           "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-  #           "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-  #           "NITROGEN, TOTAL_OW_TOTAL",
-  #           "TRUE COLOR_OW_TOTAL",
-  #           "SPECIFIC CONDUCTANCE_epi",
-  #           "PH_epi",
-  #           "DISSOLVED OXYGEN_epi")) %>% 
+  # remove extra columns
+  select(-c('CHLOROPHYLL A_OW_TOTAL',
+            'PHOSPHORUS, TOTAL_OW_TOTAL',
+            "MICROCYSTIN_OW_NA",
+            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+            "NITROGEN, TOTAL_OW_TOTAL",
+            "TRUE COLOR_OW_TOTAL",
+            "SPECIFIC CONDUCTANCE_epi",
+            "PH_epi",
+            "DISSOLVED OXYGEN_epi",
+            "DEPTH, SECCHI DISK DEPTH_SD_NA",
+            "CALCIUM_OW_TOTAL")) %>%
   distinct()
 
 
@@ -487,6 +505,150 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Distribution of nutrient limitation across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
+##### Trophic classes #####
+# Estimate assessment result
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("chla_trophic","phos_trophic"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-CatExtent2 %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals[totals$Indicator=="chla_trophic",3] <- CatExtent2$Estimate.U[4]
+totals[totals$Indicator=="phos_trophic",3] <- CatExtent2$Estimate.U[8]
+CatExtent2<-merge(CatExtent2,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="chla_trophic","Trophic Status from ChlA",Indicator),
+         Indicator=ifelse(Indicator=="phos_trophic","Trophic Status from Phosphorus",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+forplot2$Category <- factor(forplot2$Category, levels=c("oligotrophic", "mesotrophic", "eutrophic"))
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="Trophic status")
+
+ggplot(table,aes(x=Indicator,y=Percentage,fill=Category)) +
+  geom_bar(stat = "identity",position="stack")+
+  labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="Trophic status")
+
+##### Secchi #####
+#  Estimate assessment result
+secchi <- cat_analysis(
+  dframe=att,
+  vars=c("secchi"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-secchi %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- secchi$Estimate.U[4]
+secchi<-merge(secchi,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplt10<-secchi %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="secchi","Nutrient category",Indicator))
+
+table <- forplt10 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+table$Category <- factor(table$Category, levels=c("Oligotrophic", "Mesotrophic", "Eutrophic"))
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of Secchi disk depths across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
+##### Zebra mussels #####
+#  Estimate assessment result
+zebra <- cat_analysis(
+  dframe=att,
+  vars=c("zebra"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-zebra %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- zebra$Estimate.U[4]
+zebra<-merge(zebra,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplt10<-zebra %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="zebra","Susceptibility",Indicator))
+
+table <- forplt10 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+table$Category <- factor(table$Category, levels=c("Not susceptible", "May be susceptible", "Highly susceptible"))
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of zebra mussel susceptibility across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 
 ```
 
