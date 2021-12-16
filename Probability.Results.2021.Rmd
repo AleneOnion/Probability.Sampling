@@ -79,7 +79,7 @@ lab<-newdata %>%
    # keep DO values between 0 and 2m depth
 lab2 <- lab %>% 
    mutate(keep=case_when(
-     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "yes",
+     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "no",
      chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth <= 2 ~ "yes",
      chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth > 2 ~ "no")) %>%
    filter(keep!="no") %>%
@@ -279,17 +279,18 @@ m_occur <- data.frame(table(m_att$FID))
 m_att <- m_att[!duplicated(m_att$FID),]
 
 att <- m_att %>%
-  # remove extra columns
-  select(-c('CHLOROPHYLL A_OW_TOTAL',
-            'PHOSPHORUS, TOTAL_OW_TOTAL',
-            "MICROCYSTIN_OW_NA",
-            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-            "NITROGEN, TOTAL_OW_TOTAL",
-            "TRUE COLOR_OW_TOTAL",
-            "SPECIFIC CONDUCTANCE_epi",
-            "PH_epi",
-            "DISSOLVED OXYGEN_epi"))
+  # # remove extra columns
+  # select(-c('CHLOROPHYLL A_OW_TOTAL',
+  #           'PHOSPHORUS, TOTAL_OW_TOTAL',
+  #           "MICROCYSTIN_OW_NA",
+  #           "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+  #           "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+  #           "NITROGEN, TOTAL_OW_TOTAL",
+  #           "TRUE COLOR_OW_TOTAL",
+  #           "SPECIFIC CONDUCTANCE_epi",
+  #           "PH_epi",
+  #           "DISSOLVED OXYGEN_epi")) %>% 
+  distinct()
 
 
 ```
