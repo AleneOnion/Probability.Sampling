@@ -41,6 +41,8 @@ The results are knitted from Rmarkdowns into HTML files
 
 ## Thresholds
 
+Thresholds are defined in the "Prepping data" section of each script. They are listed below.
+
 ### NYS nutrient criteria
 
 -   <b>Phosphorus</b>
