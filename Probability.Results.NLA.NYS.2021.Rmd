@@ -111,12 +111,7 @@ att<-att %>%
   mutate(d.oxygen=case_when(
     OXYGEN<=3 ~ "Poor",
     between(OXYGEN, 3, 5) ~ "Fair",
-    OXYGEN>=5 ~ "Good")) %>% 
-  #n limitation
-  mutate(N_LIMIT=case_when(
-    DINTP<=1.5 ~ "N-limited",
-    between(DINTP, 1.5, 4) ~ "Co-limited",
-    DINTP>=4 ~ "P-limited"))
+    OXYGEN>=5 ~ "Good"))
 
 framesize_LC <- c("EPA"=4271) 
 
@@ -270,103 +265,6 @@ ggplot(forplot5, aes(x=Category)) +
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
 
-##### N limitation #####
-#  Estimate assessment result
-nlimit <- cat_analysis(
-  dframe=att,
-  vars=c("N_LIMIT"),
-  subpops = "include",
-  siteID = "SITE_ID",
-  weight = "WGT_TP_EXTENT",
-  xcoord = "XCOORD",
-  ycoord = "YCOORD")
-
-#quickly calculate the percentages
-totals<-nlimit %>% 
-  select(Indicator,Category,Subpopulation,Estimate.U) %>% 
-  rename(total=Estimate.U)
-totals$total <- nlimit$Estimate.U[8]
-nlimit<-merge(nlimit,totals,by=c('Indicator','Category','Subpopulation'),all.x = TRUE)
-
-forplot<-nlimit %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,Subpopulation,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total",
-         Subpopulation=="yes") %>% 
-  gather(percent,results,-Indicator,-Category,-Subpopulation) %>% 
-  mutate(Indicator=ifelse(Indicator=="N_LIMIT","Nutrient limitation category",Indicator))
-
-table <- forplot %>% 
-  spread(percent,results)  %>% 
-  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
-
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-ggplot(table,aes(x=Category,y=Percentage)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Distribution of nutrient limitation across NLA Ponded Waters",y="Percent of Total",x="Condition category")
-
-forplotsss<-forplot %>% 
-  spread(percent,results) %>% 
-  rename(percent=pct) %>% 
-  mutate(study="NLA") %>% 
-  add_row(Indicator="Nutrient limitation category", #ny prob
-          Category="Co-limited",
-          study="NYS",
-          percent=12.96,
-          pct_lcb=1.15,
-          pct_ucb=24.77) %>%
-  add_row(Indicator="Nutrient limitation category", #ny prob
-          Category="N-limited",
-          study="NYS",
-          percent=72.86,
-          pct_lcb=47.92,
-          pct_ucb=97.81) %>%
-  add_row(Indicator="Nutrient limitation category", #ny prob
-          Category="P-limited",
-          study="NYS",
-          percent=14.18,
-          pct_lcb=6.83,
-          pct_ucb=21.53) %>%
-  add_row(Indicator="Nutrient limitation category", #nap
-          Category="Co-limited",
-          study="NAP",
-          percent=4.56,
-          pct_lcb=0.00,
-          pct_ucb=9.52) %>%
-  add_row(Indicator="Nutrient limitation category", #nap
-          Category="N-limited",
-          study="NAP",
-          percent=92.27,
-          pct_lcb=69.94,
-          pct_ucb=114.60) %>%
-  add_row(Indicator="Nutrient limitation category", #nap
-          Category="P-limited",
-          study="NAP",
-          percent=3.17,
-          pct_lcb=0.14,
-          pct_ucb=6.19) %>%
-  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
-         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
-  
-
-ggplot(forplotsss, aes(x=Category)) +
-  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
-  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Nutrient limitation in NLA vs. NYS",y="Percent of Total",x="Limiting nutrient")
-
-  
 ```
 
 ## Comparison to NLA thresholds

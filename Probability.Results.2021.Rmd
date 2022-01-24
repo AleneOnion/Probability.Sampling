@@ -60,6 +60,7 @@ lab<-newdata %>%
          combined %in% c('CHLOROPHYLL A_OW_TOTAL',
                          'PHOSPHORUS, TOTAL_OW_TOTAL',
                          "MICROCYSTIN_OW_NA",
+                         "NITROGEN, NITRATE (AS N)_OW_TOTAL",
                          "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
                          "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
                          "NITROGEN, TOTAL_OW_TOTAL",
@@ -172,6 +173,7 @@ att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>%
                               "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
                               "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
                               "NITROGEN, TOTAL_OW_TOTAL",
+                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
                               "TRUE COLOR_OW_TOTAL",
                               "SPECIFIC CONDUCTANCE_epi",
                               "PH_epi",
@@ -187,6 +189,7 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
                               "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
                               "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
                               "NITROGEN, TOTAL_OW_TOTAL",
+                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
                               "TRUE COLOR_OW_TOTAL",
                               "SPECIFIC CONDUCTANCE_epi",
                               "PH_epi",
@@ -209,7 +212,7 @@ att<-att %>%
       (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
     is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
   # DIN:TP
-  mutate(DINTP=`NITROGEN, NITRATE-NITRITE_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
+  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
@@ -243,9 +246,10 @@ att<-att %>%
     between(`DISSOLVED OXYGEN_epi`, 3, 5) ~ "Fair",
     `DISSOLVED OXYGEN_epi`>=5 ~ "Good")) %>% 
   #nutrient limitation
-  mutate(npratio=case_when(
-    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`<=1.5 ~ "N-limiited",
-    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`>1.5 ~ "P-limited")) %>% 
+  mutate(N_LIMIT=case_when(
+    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`<=10 ~ "N-limiited",
+    between(`NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`, 10, 20) ~ "Co-limited",
+    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`>=20 ~ "P-limited")) %>% 
   #ph
   mutate(ph_hypo=case_when(
     `PH_epi`<=6.5 ~ "Acidic",
@@ -275,11 +279,13 @@ att<-att %>%
     between(`PH_epi`, 6.5, 7.5) ~ "Circumneutral",
     between(`PH_epi`, 7.5, 8.5) ~ "Slightly alkaline",
     `PH_epi`>=8.5 ~ "Highly alkaline")) %>% 
-  #n limitation
-  mutate(N_LIMIT=case_when(
-    DINTP<=1.5 ~ "N-limited",
-    between(DINTP, 1.5, 4) ~ "Co-limited",
-    DINTP>=4 ~ "P-limited"))
+  #leech
+  mutate(leech=case_when(
+    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`<=20 ~ "Blue",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`<=20 ~ "Green",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Brown",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Murky"
+  ))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
@@ -303,18 +309,18 @@ m_att <- m_att[!duplicated(m_att$FID),]
 
 att <- m_att %>%
   # remove extra columns
-  select(-c('CHLOROPHYLL A_OW_TOTAL',
-            'PHOSPHORUS, TOTAL_OW_TOTAL',
-            "MICROCYSTIN_OW_NA",
-            "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-            "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-            "NITROGEN, TOTAL_OW_TOTAL",
-            "TRUE COLOR_OW_TOTAL",
-            "SPECIFIC CONDUCTANCE_epi",
-            "PH_epi",
-            "DISSOLVED OXYGEN_epi",
-            "DEPTH, SECCHI DISK DEPTH_SD_NA",
-            "CALCIUM_OW_TOTAL")) %>%
+  # select(-c('CHLOROPHYLL A_OW_TOTAL',
+  #           'PHOSPHORUS, TOTAL_OW_TOTAL',
+  #           "MICROCYSTIN_OW_NA",
+  #           "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+  #           "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+  #           "NITROGEN, TOTAL_OW_TOTAL",
+  #           "TRUE COLOR_OW_TOTAL",
+  #           "SPECIFIC CONDUCTANCE_epi",
+  #           "PH_epi",
+  #           "DISSOLVED OXYGEN_epi",
+  #           "DEPTH, SECCHI DISK DEPTH_SD_NA",
+  #           "CALCIUM_OW_TOTAL")) %>%
   distinct()
 
 
@@ -470,50 +476,6 @@ ggplot(table,aes(x=Category,y=Percentage)) +
 ggplot(table,aes(x=Indicator,y=Percentage,fill=Category)) +
   geom_bar(stat = "identity",position="stack")+
   labs(title="Distribution of trophic classes across NYS Ponded Waters",y="Percent of Total",x="Trophic status")
-
-##### NP ratio #####
-#  Estimate assessment result
-npratio <- cat_analysis(
-  dframe=att,
-  vars=c("npratio"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-
-#quickly calculate the percentages
-totals<-npratio %>% 
-  select(Indicator,Category,Estimate.U) %>% 
-  rename(total=Estimate.U)
-totals$total <- npratio$Estimate.U[2]
-npratio<-merge(npratio,totals,by=c('Indicator','Category'),all.x = TRUE)
-
-forplt10<-npratio %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total") %>% 
-  gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="npratio","Nutrient limitation category",Indicator))
-
-table <- forplt10 %>% 
-  spread(percent,results)  %>% 
-  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
-
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-ggplot(table,aes(x=Category,y=Percentage)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Distribution of nutrient limitation across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 
 ##### N limitation #####
 #  Estimate assessment result
@@ -1289,6 +1251,58 @@ ggplot(table,aes(x=Category,y=Percentage)) +
 
 ```
 
+## Leech
+
+```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+##### Leech color #####
+# Estimate assessment result
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("leech"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-CatExtent2 %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- CatExtent2$Estimate.U[5]
+CatExtent2<-merge(CatExtent2,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="leech","Lake nutrient-color status",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Lake nutrient-color status across NYS Ponded Waters",y="Percent of Total",x="Lake nutrient-color status")
+
+ggplot(table,aes(x=Indicator,y=Percentage,fill=Category)) +
+  geom_bar(stat = "identity",position="stack")+
+  labs(title="Lake nutrient-color status across NYS Ponded Waters",y="Percent of Total",x="Lake nutrient-color status")
+
+```
 
 ## Map
 

@@ -111,12 +111,7 @@ att<-att %>%
   mutate(d.oxygen=case_when(
     OXYGEN<=3 ~ "Poor",
     between(OXYGEN, 3, 5) ~ "Fair",
-    OXYGEN>=5 ~ "Good")) %>% 
-  #n limitation
-  mutate(N_LIMIT=case_when(
-    DINTP<=1.5 ~ "N-limited",
-    between(DINTP, 1.5, 4) ~ "Co-limited",
-    DINTP>=4 ~ "P-limited"))
+    OXYGEN>=5 ~ "Good")) 
 
 framesize_LC <- c("EPA"=5721) 
 
@@ -267,52 +262,6 @@ ggplot(forplot5, aes(x=Category,fill=study)) +
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
 
-##### N limitation #####
-#  Estimate assessment result
-nlimit <- cat_analysis(
-  dframe=att,
-  vars=c("N_LIMIT"),
-  subpops = "include",
-  siteID = "SITE_ID",
-  weight = "WGT_TP_EXTENT",
-  xcoord = "XCOORD",
-  ycoord = "YCOORD")
-
-#quickly calculate the percentages
-totals<-nlimit %>% 
-  select(Indicator,Category,Subpopulation,Estimate.U) %>% 
-  rename(total=Estimate.U)
-totals$total <- nlimit$Estimate.U[8]
-nlimit<-merge(nlimit,totals,by=c('Indicator','Category','Subpopulation'),all.x = TRUE)
-
-forplot<-nlimit %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100) %>% 
-  select(Indicator,Category,Subpopulation,pct,pct_lcb,pct_ucb) %>% 
-  distinct() %>% 
-  filter(Category!="Total",
-         Subpopulation=="yes") %>% 
-  gather(percent,results,-Indicator,-Category,-Subpopulation) %>% 
-  mutate(Indicator=ifelse(Indicator=="N_LIMIT","Nutrient limitation category",Indicator))
-
-table <- forplot %>% 
-  spread(percent,results)  %>% 
-  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
-
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-ggplot(table,aes(x=Category,y=Percentage)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
-  ylim(0,100)+
-  labs(title="Distribution of nutrient limitation across NAP Ponded Waters",y="Percent of Total",x="Condition category")
-
-  
 ```
 
 ## Comparison to NLA thresholds
