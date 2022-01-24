@@ -208,6 +208,8 @@ att<-att %>%
     !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
       (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
     is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
+  # DIN:TP
+  mutate(DINTP=`NITROGEN, NITRATE-NITRITE_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
@@ -272,7 +274,12 @@ att<-att %>%
     `PH_epi`<=6.5 ~ "Acidic",
     between(`PH_epi`, 6.5, 7.5) ~ "Circumneutral",
     between(`PH_epi`, 7.5, 8.5) ~ "Slightly alkaline",
-    `PH_epi`>=8.5 ~ "Highly alkaline"))
+    `PH_epi`>=8.5 ~ "Highly alkaline")) %>% 
+  #n limitation
+  mutate(N_LIMIT=case_when(
+    DINTP<=1.5 ~ "N-limited",
+    between(DINTP, 1.5, 4) ~ "Co-limited",
+    DINTP>=4 ~ "P-limited"))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
@@ -507,6 +514,51 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Distribution of nutrient limitation across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
+##### N limitation #####
+#  Estimate assessment result
+nlimit <- cat_analysis(
+  dframe=att,
+  vars=c("N_LIMIT"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-nlimit %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- nlimit$Estimate.U[4]
+nlimit<-merge(nlimit,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot<-nlimit %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="N_LIMIT","Nutrient limitation category",Indicator))
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Distribution of nutrient limitation across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
 
 ##### Trophic classes #####
 # Estimate assessment result
