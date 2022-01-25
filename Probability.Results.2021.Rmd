@@ -323,19 +323,6 @@ att <- m_att %>%
   #           "CALCIUM_OW_TOTAL")) %>%
   distinct()
 
-
-```
-
-## Analysis
-
-The start of the NYSAnalysis code from Tony Olsen
-
-The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
-
-PLEASE NOTE: the samples evaluated included the lakes that were actually sampled as well as the lakes which could not be sampled due to wetland status or access issues. After adjusting the weights, they should add up to the original frame size of 6437:
-
-```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-
 # Calculate the adjusted weights
 # The numerator is the original frame size value
 # the denominator is the actual number of samples evaluated in each category
@@ -364,12 +351,16 @@ att<-att %>%
 # should add up to 6437
 print(sum(att$WgtAdj))
 
-# save data to csv
-write.csv(att, file="Probability_sampling_data_2021.csv", na = "", quote = TRUE, row.names = FALSE)
-
-rm(list=setdiff(ls(), c('att')))
 
 ```
+
+## Analysis
+
+The start of the NYSAnalysis code from Tony Olsen
+
+The results are weighted based on the distribution of the five size classes in the original data frame divided by the distribution in the samples evaluated. The purpose of this step is to account for oversampling in certain size classes.
+
+PLEASE NOTE: the samples evaluated included the lakes that were actually sampled as well as the lakes which could not be sampled due to wetland status or access issues. After adjusting the weights, they should add up to the original frame size of 6437.
 
 Non-target samples are those determined to be wetlands using GIS analysis. Target samples include lakes actually sampled as well as lakes we intended to sample but couldn't for access or wetland status reasons. 
 The following code uses the sample population of target/non-target samples (NResp) to project how many of the total 6437 lakes in our data frame would have been target/non-target (Estimate.U) as well as the 95% confidence interval (LCB95Pct.U and UCB95Pct.U).
@@ -1253,7 +1244,19 @@ ggplot(table,aes(x=Category,y=Percentage)) +
 
 ## Leech
 
+Leech, D. M., Pollard, A. I., Labou, S. G., & Hampton, S. E. (2018). Fewer blue lakes and more murky lakes across the continental U.S.: Implications for planktonic food webs. Limnology and Oceanography, 63(6), 2661–2680. https://doi.org/10.1002/lno.10967
+
 ```{r, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
+
+print(
+  ggplot(att,aes(x=`PHOSPHORUS, TOTAL_OW_TOTAL`,y=`TRUE COLOR_OW_TOTAL`,color=leech))+
+    geom_point()+
+    geom_vline(xintercept=0.030)+
+    geom_hline(yintercept=20)+
+    scale_y_continuous(trans='log10')+
+    scale_x_continuous(trans='log10')+
+    scale_color_manual(values=c("blue", "brown", "green","#E69F00")))
+
 ##### Leech color #####
 # Estimate assessment result
 CatExtent2 <- cat_analysis(
