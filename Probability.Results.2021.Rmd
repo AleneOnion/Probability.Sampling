@@ -291,10 +291,10 @@ att<-att %>%
   )) %>% 
   #chloride
   mutate(chloride=case_when(
-    `CHLORIDE_OW_TOTAL` <= 100 ~ "Low (<100 mg/L)",
-    between(`CHLORIDE_OW_TOTAL`,100,250) ~ "Medium (100-250 mg/L)",
-    `CHLORIDE_OW_TOTAL` >= 250 ~ "High (>250 mg/L)",
-    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low (<100 mg/L)"))
+    `CHLORIDE_OW_TOTAL` <= 25 ~ "Low",
+    between(`CHLORIDE_OW_TOTAL`,25,100) ~ "Medium",
+    `CHLORIDE_OW_TOTAL` >= 100 ~ "High",
+    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low"))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
@@ -523,7 +523,7 @@ chloride <- cat_analysis(
 totals<-chloride %>% 
   select(Indicator,Category,Estimate.U) %>% 
   rename(total=Estimate.U)
-totals$total <- chloride$Estimate.U[3]
+totals$total <- chloride$Estimate.U[4]
 chloride<-merge(chloride,totals,by=c('Indicator','Category'),all.x = TRUE)
 
 forplot<-chloride %>% 
@@ -543,6 +543,8 @@ table <- forplot %>%
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
+
+table$Category <- factor(table$Category, levels=c("Low", "Medium", "High"))
 
 ggplot(table,aes(x=Category,y=Percentage)) +
   geom_point()+
