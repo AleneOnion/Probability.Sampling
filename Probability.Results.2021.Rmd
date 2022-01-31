@@ -70,7 +70,8 @@ lab<-newdata %>%
                          "SPECIFIC CONDUCTANCE_DP_NA",
                          "TEMPERATURE_DP_NA",
                          "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                         "CALCIUM_OW_TOTAL")) %>%
+                         "CALCIUM_OW_TOTAL",
+                         "CHLORIDE_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -179,7 +180,8 @@ att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>%
                               "PH_epi",
                               "DISSOLVED OXYGEN_epi",
                               "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                              "CALCIUM_OW_TOTAL")) %>% 
+                              "CALCIUM_OW_TOTAL",
+                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
 att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% 
@@ -195,7 +197,8 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
                               "PH_epi",
                               "DISSOLVED OXYGEN_epi",
                               "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                              "CALCIUM_OW_TOTAL")) %>% 
+                              "CALCIUM_OW_TOTAL",
+                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
   
@@ -285,7 +288,13 @@ att<-att %>%
     `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`<=20 ~ "Green",
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Brown",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Murky"
-  ))
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    `CHLORIDE_OW_TOTAL` <= 100 ~ "Low (<100 mg/L)",
+    between(`CHLORIDE_OW_TOTAL`,100,250) ~ "Medium (100-250 mg/L)",
+    `CHLORIDE_OW_TOTAL` >= 250 ~ "High (>250 mg/L)",
+    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low (<100 mg/L)"))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
@@ -308,19 +317,6 @@ m_occur <- data.frame(table(m_att$FID))
 m_att <- m_att[!duplicated(m_att$FID),]
 
 att <- m_att %>%
-  # remove extra columns
-  # select(-c('CHLOROPHYLL A_OW_TOTAL',
-  #           'PHOSPHORUS, TOTAL_OW_TOTAL',
-  #           "MICROCYSTIN_OW_NA",
-  #           "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-  #           "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-  #           "NITROGEN, TOTAL_OW_TOTAL",
-  #           "TRUE COLOR_OW_TOTAL",
-  #           "SPECIFIC CONDUCTANCE_epi",
-  #           "PH_epi",
-  #           "DISSOLVED OXYGEN_epi",
-  #           "DEPTH, SECCHI DISK DEPTH_SD_NA",
-  #           "CALCIUM_OW_TOTAL")) %>%
   distinct()
 
 # Calculate the adjusted weights
@@ -511,6 +507,50 @@ ggplot(table,aes(x=Category,y=Percentage)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Distribution of nutrient limitation across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
+##### Chloride #####
+#  Estimate assessment result
+chloride <- cat_analysis(
+  dframe=att,
+  vars=c("chloride"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+#quickly calculate the percentages
+totals<-chloride %>% 
+  select(Indicator,Category,Estimate.U) %>% 
+  rename(total=Estimate.U)
+totals$total <- chloride$Estimate.U[3]
+chloride<-merge(chloride,totals,by=c('Indicator','Category'),all.x = TRUE)
+
+forplot<-chloride %>% 
+  mutate(pct=(Estimate.U/total)*100,
+         pct_lcb=(LCB95Pct.U/total)*100,
+         pct_ucb=(UCB95Pct.U/total)*100) %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  filter(Category!="Total") %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="chloride","Chloride",Indicator))
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Chloride conditions across NYS Ponded Waters",y="Percent of Total",x="Condition category")
 
 
 ##### Trophic classes #####
