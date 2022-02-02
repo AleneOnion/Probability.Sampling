@@ -36,7 +36,7 @@ setwd("~/OneDrive - New York State Office of Information Technology Services/Rsc
 chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
 
 chem <- chem %>% 
-  filter(ANALYTE %in% c("NTL","CHLA","PTL"),
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR"),
          NARS_FLAG == "") %>% 
   select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
@@ -80,6 +80,8 @@ att$CHLA <- as.numeric(att$CHLA)
 att$TN <- as.numeric(att$TN)
 att$TP <- as.numeric(att$TP)
 att$OXYGEN <- as.numeric(att$OXYGEN)
+att$COLOR <- as.numeric(att$COLOR)
+att$DINTP <- as.numeric(att$NITRATE_N)/(as.numeric(att$TP)/1000)
   
 # selecting parameters and adding trophic status
 
@@ -110,7 +112,14 @@ att<-att %>%
   mutate(d.oxygen=case_when(
     OXYGEN<=3 ~ "Poor",
     between(OXYGEN, 3, 5) ~ "Fair",
-    OXYGEN>=5 ~ "Good"))
+    OXYGEN>=5 ~ "Good")) %>% 
+  #leech
+  mutate(leech=case_when(
+    TP<=30 & COLOR<=20 ~ "Blue",
+    TP>30 & COLOR<=20 ~ "Green",
+    TP<=30 & COLOR>20 ~ "Brown",
+    TP>30 & COLOR>20 ~ "Murky"
+  ))
 
 framesize_LC <- c("EPA"=5721) 
 
@@ -260,7 +269,7 @@ ggplot(forplot5, aes(x=Category,fill=study)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
-  
+
 ```
 
 ## Comparison to NLA thresholds
@@ -566,6 +575,56 @@ ggplot(forplot7, aes(x=Category,fill=study)) +
                  position=position_dodge(.9))+
   ylim(0,100)+
   labs(title="Dissolved oxygen condition in  NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="D.O. Condition")
+```
+
+## Leech nutrient-color
+
+```{r, echo=FALSE, results="asis",message=FALSE,warning=FALSE}
+print(
+  ggplot(att,aes(x=TP,y=COLOR,color=leech))+
+    geom_point()+
+    geom_vline(xintercept=30)+
+    geom_hline(yintercept=20)+
+    scale_y_continuous(trans='log10')+
+    scale_x_continuous(trans='log10')+
+    scale_color_manual(values=c("blue", "brown", "green","#E69F00")))
+
+# Estimate assessment result
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("leech"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="leech","Lake nutrient-color status",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Lake nutrient-color status across Northern Appalachian ponded waters",y="Percent of Total",x="Lake nutrient-color status")
 ```
 
 ## Sites map
