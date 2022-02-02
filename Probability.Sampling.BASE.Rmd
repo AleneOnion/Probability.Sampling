@@ -339,7 +339,7 @@ att<-att %>%
 
 framesize_LC <- c("New York State"=116) 
 
-rm(list=setdiff(ls(), c('newdata',"att","framesize_LC")))
+rm(list=setdiff(ls(), c('newdata',"att","framesize_LC","sites")))
 
 ```
 
@@ -403,14 +403,16 @@ ggplot(table,aes(x=Category,y=Estimate.P)) +
 
 ```
 
-```{r bar plot, fig.height=20, fig.width=10}
+```{r bar plot}
 
-ggplot(table,aes(y=Estimate.P,x=Category,fill=Category))+
+ggplot(table[table$Indicator %in% c("phos_trophic","chla_trophic","secchi"),],aes(y=Estimate.P,x=Category,fill=Category))+
   geom_col()+
   ylim(0,100)+
   geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
   coord_flip()+
-  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(),axis.ticks.y = element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  scale_fill_discrete(name = "Trophic status", labels = c("Oligotrophic", "Mesotrophic", "Eutrophic"))
 
 ```
 
@@ -422,9 +424,6 @@ To create maps:
 
 ```{r map}
 
-#read in lat/long for lakes
-locs <- att
-
 #fetch map
 library(ggmap)
 library(maps)
@@ -432,18 +431,21 @@ library(maps)
 states <- map_data("state")
 ny <- subset(states, region %in% c("new york"))
 
-locs$CHLA_threshold <- factor(locs$CHLA_threshold, levels=c("Good","Fair","Poor"))
-
-print(status <- ggplot() + 
+ggplot() + 
   geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
   coord_fixed(1.3) +
-  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=(Eval_Status=="Target_Sampled")))+
-  guides(fill=FALSE))  # do this to leave off the color legend)
+  geom_point(data=sites,aes(x=xcoord,y=ycoord,color=(Eval_Status=="Target_Sampled")))+
+  guides(fill=FALSE) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))  # do this to leave off all the things
 
-print(CHLA <- ggplot() + 
+att$CHLA_threshold <- factor(att$CHLA_threshold, levels=c("Good","Fair","Poor"))
+ggplot() + 
   geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
   coord_fixed(1.3) +
-  geom_point(data=locs,aes(x=xcoord,y=ycoord,color=CHLA_threshold))+
-  guides(fill=FALSE))  # do this to leave off the color legend)
+  geom_point(data=att,aes(x=xcoord,y=ycoord,color=CHLA_threshold))+
+  guides(fill=FALSE)+
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
 
 ```
