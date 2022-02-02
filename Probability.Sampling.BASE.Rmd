@@ -35,7 +35,7 @@ In this script, weight is adjusted because of the proportional design. In the fu
 
 I am designating relevant variables from the dataset as well as creating new variables: mean dissolved oxygen from 0-2m, epilimentic means for ph and spconductance, total nitrogen and DIN:TP ratio.
 
-```{r data prep}
+```{r load data}
 
 # retrieve raw data from database
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Current")
@@ -44,23 +44,10 @@ setwd("~/OneDrive - New York State Office of Information Technology Services/Rsc
 
 rm(list=setdiff(ls(), c('newdata')))
 
-#list relevant variables
-vars_to_keep <- c('CHLOROPHYLL A_OW_TOTAL',
-                  'PHOSPHORUS, TOTAL_OW_TOTAL',
-                  "MICROCYSTIN_OW_NA",
-                  "NITROGEN, NITRATE (AS N)_OW_TOTAL",
-                  "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-                  "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-                  "NITROGEN, TOTAL_OW_TOTAL",
-                  "DISSOLVED OXYGEN_DP_NA",
-                  "TRUE COLOR_OW_TOTAL",
-                  "PH_DP_NA",
-                  "SPECIFIC CONDUCTANCE_DP_NA",
-                  "TEMPERATURE_DP_NA",
-                  "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                  "CALCIUM_OW_TOTAL",
-                  "CHLORIDE_OW_TOTAL")
+```
 
+```{r prep data}
+#list relevant variables
 lab<-newdata %>%
   filter(SAMPLE_DATE>'2020-01-01') %>%
   mutate(combined=paste(CHARACTERISTIC_NAME,
@@ -78,7 +65,21 @@ lab<-newdata %>%
          RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
   filter(!is.na(RSLT_RESULT_VALUE),
          is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
-         combined %in% vars_to_keep) %>%
+         combined %in% c('CHLOROPHYLL A_OW_TOTAL',
+                         'PHOSPHORUS, TOTAL_OW_TOTAL',
+                         "MICROCYSTIN_OW_NA",
+                         "NITROGEN, NITRATE (AS N)_OW_TOTAL",
+                         "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+                         "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+                         "NITROGEN, TOTAL_OW_TOTAL",
+                         "DISSOLVED OXYGEN_DP_NA",
+                         "TRUE COLOR_OW_TOTAL",
+                         "PH_DP_NA",
+                         "SPECIFIC CONDUCTANCE_DP_NA",
+                         "TEMPERATURE_DP_NA",
+                         "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                         "CALCIUM_OW_TOTAL",
+                         "CHLORIDE_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -86,15 +87,15 @@ lab<-newdata %>%
          result_value=RSLT_RESULT_VALUE,
          profile_depth=RSLT_PROFILE_DEPTH)
 
-# dissolved oxygen:
-# keep DO values between 0 and 2m depth
+   # dissolved oxygen:
+   # keep DO values between 0 and 2m depth
 lab2 <- lab %>% 
-  mutate(keep=case_when(
-    !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "no",
-    chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth <= 2 ~ "yes",
-    chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth > 2 ~ "no")) %>%
-  filter(keep!="no") %>%
-  select(-keep)
+   mutate(keep=case_when(
+     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ "no",
+     chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth <= 2 ~ "yes",
+     chemical_name=="DISSOLVED OXYGEN_DP_NA" & profile_depth > 2 ~ "no")) %>%
+   filter(keep!="no") %>%
+   select(-keep)
 
 # mean DO for each lake each date
 DO <- aggregate(lab2$result_value,list(lab2$LAKE_ID,lab2$SAMPLE_DATE),FUN=mean) %>% 
@@ -175,56 +176,43 @@ sites<-sites %>%
 
 # restrict to only the data in the probability study and spread the data
 att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>% 
+  filter(chemical_name %in% c('CHLOROPHYLL A_OW_TOTAL',
+                              'PHOSPHORUS, TOTAL_OW_TOTAL',
+                              "MICROCYSTIN_OW_NA",
+                              "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+                              "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+                              "NITROGEN, TOTAL_OW_TOTAL",
+                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
+                              "TRUE COLOR_OW_TOTAL",
+                              "SPECIFIC CONDUCTANCE_epi",
+                              "PH_epi",
+                              "DISSOLVED OXYGEN_epi",
+                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                              "CALCIUM_OW_TOTAL",
+                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
-
-att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>% 
+att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% 
+  filter(chemical_name %in% c('CHLOROPHYLL A_OW_TOTAL',
+                              'PHOSPHORUS, TOTAL_OW_TOTAL',
+                              "MICROCYSTIN_OW_NA",
+                              "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
+                              "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
+                              "NITROGEN, TOTAL_OW_TOTAL",
+                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
+                              "TRUE COLOR_OW_TOTAL",
+                              "SPECIFIC CONDUCTANCE_epi",
+                              "PH_epi",
+                              "DISSOLVED OXYGEN_epi",
+                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
+                              "CALCIUM_OW_TOTAL",
+                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
-  select(-result_value.x,-result_value.y) 
+  select(-result_value.x,-result_value.y)
   
 att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
 att<-att %>% spread(chemical_name,result_value,fill = NA)
 
-# Create a Target/NonTarget status variable
-att<-att %>% 
-  mutate(statusTNT="Target",
-         statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
-
-# get duplicates (multiple samples of same lake)
-n_occur <- data.frame(table(att$FID))
-dupes <- att[att$FID %in% n_occur$Var1[n_occur$Freq > 1],]
-
-# keep most recent august sample
-m_att <- att %>%
-  mutate(keep=case_when(
-    FID %in% dupes$FID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
-    !(FID %in% dupes$FID) ~ "yes")) %>%
-  arrange(FID,desc(SAMPLE_DATE)) %>%
-  filter(keep=="yes")
-
-m_occur <- data.frame(table(m_att$FID))
-m_att <- m_att[!duplicated(m_att$FID),]
-
-att <- m_att %>%
-  distinct()
-
-# add adjusted weight variable
-att <- att %>% 
-  mutate(WgtAdj=case_when(
-         PROB_CAT=="(1,4]"~(1828/29),
-         PROB_CAT=="(4,10]"~(2490/15),
-         PROB_CAT=="(10,20]"~(1003/18),
-         PROB_CAT=="(20,50]"~(616/20),
-         PROB_CAT==">50"~(500/33)))
-
-att <- att %>% 
-  # create total nitrogen
-  mutate(`NITROGEN, TOTAL`=case_when(
-    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
-      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
-    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
-  # DIN:TP
-  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`)
 
 ```
 
@@ -233,10 +221,16 @@ att <- att %>%
 Create any desired thresholds. I use a case_when() statement.
 
 ```{r thresholds}
-
 att<-att %>% 
   # remove fields in the sites table that aren't relevant
   select(-Accessible,-Comments,-Contact,-STATUS) %>%
+  # create total nitrogen
+  mutate(`NITROGEN, TOTAL`=case_when(
+    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
+      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
+    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
+  # DIN:TP
+  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "Oligo",
@@ -262,29 +256,29 @@ att<-att %>%
   # microcystin
   mutate(microcystin=case_when(
     is.na(`MICROCYSTIN_OW_NA`) ~"Non-detect",
-    `MICROCYSTIN_OW_NA`<8 ~ "Microcystin detected",
+    `MICROCYSTIN_OW_NA`<8 ~ "Microcystin Detected",
     `MICROCYSTIN_OW_NA`>=8 ~ "Most disturbed")) %>%
   # dissolved oxygen
   mutate(d.oxygen=case_when(
     `DISSOLVED OXYGEN_epi`<=3 ~ "Poor",
     between(`DISSOLVED OXYGEN_epi`, 3, 5) ~ "Fair",
     `DISSOLVED OXYGEN_epi`>=5 ~ "Good")) %>% 
-  # nutrient limitation
+  #nutrient limitation
   mutate(N_LIMIT=case_when(
     `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`<=10 ~ "N-limited",
     between(`NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`, 10, 20) ~ "Co-limited",
     `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`>=20 ~ "P-limited")) %>% 
-  # secchi
+  #secchi
   mutate(secchi=case_when(
     `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eu",
     between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Meso",
     `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligo")) %>% 
-  # zebra mussels
+  #zebra mussels
   mutate(zebra=case_when(
     CALCIUM_OW_TOTAL<=10 ~ "Not susceptible",
     between(CALCIUM_OW_TOTAL, 10, 20) ~ "May be susceptible",
     CALCIUM_OW_TOTAL>=20 ~ "Highly susceptible")) %>% 
-  # cslap (conductance, color, epilimnetic ph)
+  #cslap
   mutate(conductance=case_when(
     `SPECIFIC CONDUCTANCE_epi`<=125 ~ "Soft",
     between(`SPECIFIC CONDUCTANCE_epi`, 125, 250) ~ "Average",
@@ -312,7 +306,40 @@ att<-att %>%
     `CHLORIDE_OW_TOTAL` >= 100 ~ "Poor",
     Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Good"))
 
-rm(list=setdiff(ls(), c('newdata',"att")))
+# Create a Target/NonTarget status variable
+att<-att %>% 
+  mutate(statusTNT="Target",
+         statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
+
+# get duplicates (multiple samples of same lake)
+n_occur <- data.frame(table(att$FID))
+dupes <- att[att$FID %in% n_occur$Var1[n_occur$Freq > 1],]
+
+# keep most recent august sample
+m_att <- att %>%
+  mutate(keep=case_when(
+    FID %in% dupes$FID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
+    !(FID %in% dupes$FID) ~ "yes")) %>%
+  arrange(FID,desc(SAMPLE_DATE)) %>%
+  filter(keep=="yes")
+
+m_occur <- data.frame(table(m_att$FID))
+m_att <- m_att[!duplicated(m_att$FID),]
+
+att <- m_att %>%
+  distinct()
+
+att<-att %>% 
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/20),
+         PROB_CAT==">50"~(500/33)))
+
+framesize_LC <- c("New York State"=116) 
+
+rm(list=setdiff(ls(), c('newdata',"att","framesize_LC")))
 
 ```
 
@@ -364,7 +391,7 @@ theme_plain(hux)
 
 Here I have plotted all the results together, but you could plot them individually.
 
-```{r plots, fig.height=10, fig.width=10}
+```{r dot plot, fig.height=10, fig.width=10}
 
 ggplot(table,aes(x=Category,y=Estimate.P)) +
   geom_point()+
@@ -373,6 +400,17 @@ ggplot(table,aes(x=Category,y=Estimate.P)) +
   facet_wrap(.~Indicator,scales = "free")+
   ylim(0,100)+
   labs(title="Condition estimates across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+
+```
+
+```{r bar plot, fig.height=20, fig.width=10}
+
+ggplot(table,aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")
 
 ```
 
