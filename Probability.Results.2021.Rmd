@@ -200,7 +200,14 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
                               "CALCIUM_OW_TOTAL",
                               "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
-  select(-result_value.x,-result_value.y)
+  select(-result_value.x,-result_value.y) %>% 
+  # create total nitrogen
+  mutate(`NITROGEN, TOTAL`=case_when(
+    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
+      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
+    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
+  # DIN:TP
+  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   
 att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
 att<-att %>% spread(chemical_name,result_value,fill = NA)
@@ -209,13 +216,6 @@ att<-att %>% spread(chemical_name,result_value,fill = NA)
 att<-att %>% 
   # remove fields in the sites table that aren't relevant
   select(-Accessible,-Comments,-Contact,-STATUS) %>%
-  # create total nitrogen
-  mutate(`NITROGEN, TOTAL`=case_when(
-    !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
-      (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
-    is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
-  # DIN:TP
-  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "oligotrophic",
