@@ -36,7 +36,7 @@ setwd("~/OneDrive - New York State Office of Information Technology Services/Rsc
 chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
 
 chem <- chem %>% 
-  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR"),
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE"),
          NARS_FLAG == "") %>% 
   select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
@@ -119,7 +119,12 @@ att<-att %>%
     TP>30 & COLOR<=20 ~ "Green",
     TP<=30 & COLOR>20 ~ "Brown",
     TP>30 & COLOR>20 ~ "Murky"
-  ))
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    CHLORIDE <= 25 ~ "Low",
+    between(CHLORIDE,25,100) ~ "Medium",
+    CHLORIDE >= 100 ~ "High"))
 
 framesize_LC <- c("EPA"=5721) 
 
@@ -269,6 +274,33 @@ ggplot(forplot5, aes(x=Category,fill=study)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
+
+##### CHLORIDE #####
+CatExtent <- cat_analysis(
+  dframe=att,
+  vars=c("chloride"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot<-CatExtent %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",Subpopulation=="yes") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category)
+
+table <- forplot %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
 
 ```
 

@@ -79,7 +79,13 @@ lab<-newdata %>%
                          "TEMPERATURE_DP_NA",
                          "DEPTH, SECCHI DISK DEPTH_SD_NA",
                          "CALCIUM_OW_TOTAL",
-                         "CHLORIDE_OW_TOTAL")) %>%
+                         "CHLORIDE_OW_TOTAL",
+                         "CHLOROPHYLL A (PROBE) CONCENTRATION, CHLOROPHYTE (GREEN ALGAE)_OW_NA",
+                         "CHLOROPHYLL A (PROBE) CONCENTRATION, CRYPTOPHYTA (CRYPTOPHYTES)_OW_NA",
+                         "CHLOROPHYLL A (PROBE) CONCENTRATION, CYANOBACTERIA (BLUEGREEN)_OW_NA",
+                         "CHLOROPHYLL A (PROBE) CONCENTRATION, DINOPHYTA (DIATOMS)_OW_NA",
+                         "CHLOROPHYLL A (PROBE) CONCENTRATION, TOTAL_OW_NA",
+                         "ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -176,38 +182,11 @@ sites<-sites %>%
 
 # restrict to only the data in the probability study and spread the data
 att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>% 
-  filter(chemical_name %in% c('CHLOROPHYLL A_OW_TOTAL',
-                              'PHOSPHORUS, TOTAL_OW_TOTAL',
-                              "MICROCYSTIN_OW_NA",
-                              "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-                              "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-                              "NITROGEN, TOTAL_OW_TOTAL",
-                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
-                              "TRUE COLOR_OW_TOTAL",
-                              "SPECIFIC CONDUCTANCE_epi",
-                              "PH_epi",
-                              "DISSOLVED OXYGEN_epi",
-                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                              "CALCIUM_OW_TOTAL",
-                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
 att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% 
-  filter(chemical_name %in% c('CHLOROPHYLL A_OW_TOTAL',
-                              'PHOSPHORUS, TOTAL_OW_TOTAL',
-                              "MICROCYSTIN_OW_NA",
-                              "NITROGEN, NITRATE-NITRITE_OW_TOTAL",
-                              "NITROGEN, KJELDAHL, TOTAL_OW_TOTAL",
-                              "NITROGEN, TOTAL_OW_TOTAL",
-                              "NITROGEN, NITRATE (AS N)_OW_TOTAL",
-                              "TRUE COLOR_OW_TOTAL",
-                              "SPECIFIC CONDUCTANCE_epi",
-                              "PH_epi",
-                              "DISSOLVED OXYGEN_epi",
-                              "DEPTH, SECCHI DISK DEPTH_SD_NA",
-                              "CALCIUM_OW_TOTAL",
-                              "CHLORIDE_OW_TOTAL")) %>% 
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
+  filter(!chemical_name %in% c("DISSOLVED OXYGEN_DP_NA","PH_DP_NA","SPECIFIC CONDUCTANCE_DP_NA","TEMPERATURE_DP_NA")) %>% 
   select(-result_value.x,-result_value.y)
   
 att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
@@ -233,13 +212,13 @@ att<-att %>%
   mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
-    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "Oligo",
-    between(`PHOSPHORUS, TOTAL_OW_TOTAL`,0.01,0.02) ~ "Meso",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.02 ~ "Eu")) %>%
+    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "Oligotrophic",
+    between(`PHOSPHORUS, TOTAL_OW_TOTAL`,0.01,0.02) ~ "Mesotrophic",
+    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.02 ~ "Eutrophic")) %>%
   mutate(chla_trophic=case_when(
-    `CHLOROPHYLL A_OW_TOTAL`<=2 ~ "Oligo",
-    between(`CHLOROPHYLL A_OW_TOTAL`,2,8) ~ "Meso",
-    `CHLOROPHYLL A_OW_TOTAL`>=8 ~ "Eu")) %>%
+    `CHLOROPHYLL A_OW_TOTAL`<=2 ~ "Oligotrophic",
+    between(`CHLOROPHYLL A_OW_TOTAL`,2,8) ~ "Mesotrophic",
+    `CHLOROPHYLL A_OW_TOTAL`>=8 ~ "Eutrophic")) %>%
   # EPA thresholds
   mutate(TP_threshold=case_when(
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.016 ~ "Good",
@@ -270,9 +249,9 @@ att<-att %>%
     `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`>=20 ~ "P-limited")) %>% 
   #secchi
   mutate(secchi=case_when(
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eu",
-    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Meso",
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligo")) %>% 
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eutrophic",
+    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Mesotrophic",
+    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligotrophic")) %>% 
   #zebra mussels
   mutate(zebra=case_when(
     CALCIUM_OW_TOTAL<=10 ~ "Not susceptible",
@@ -304,32 +283,56 @@ att<-att %>%
     `CHLORIDE_OW_TOTAL` <= 25 ~ "Good",
     between(`CHLORIDE_OW_TOTAL`,25,100) ~ "Fair",
     `CHLORIDE_OW_TOTAL` >= 100 ~ "Poor",
-    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Good"))
+    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Good")) %>% 
+  #chlorophyll
+  rename(CHLOROPHYTE=`CHLOROPHYLL A (PROBE) CONCENTRATION, CHLOROPHYTE (GREEN ALGAE)_OW_NA`,
+         CRYPTOPHYTA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CRYPTOPHYTA (CRYPTOPHYTES)_OW_NA`,
+         CYANOBACTERIA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CYANOBACTERIA (BLUEGREEN)_OW_NA`,
+         DINOPHYTA=`CHLOROPHYLL A (PROBE) CONCENTRATION, DINOPHYTA (DIATOMS)_OW_NA`,
+         PROBE_TOTAL=`CHLOROPHYLL A (PROBE) CONCENTRATION, TOTAL_OW_NA`) %>% 
+  mutate(chlorophyte=case_when(
+    CHLOROPHYTE/PROBE_TOTAL<=0.25 ~ "Low",
+    between(CHLOROPHYTE/PROBE_TOTAL,0.25,0.5) ~ "Medium",
+    CHLOROPHYTE/PROBE_TOTAL>=0.5 ~ "High")) %>% 
+  mutate(cryptophyta=case_when(
+    CRYPTOPHYTA/PROBE_TOTAL<=0.25 ~ "Low",
+    between(CRYPTOPHYTA/PROBE_TOTAL,0.25,0.5) ~ "Medium",
+    CRYPTOPHYTA/PROBE_TOTAL>=0.5 ~ "High")) %>% 
+  mutate(cyanobacteria=case_when(
+    CYANOBACTERIA/PROBE_TOTAL<=0.25 ~ "Low",
+    between(CYANOBACTERIA/PROBE_TOTAL,0.25,0.5) ~ "Medium",
+    CYANOBACTERIA/PROBE_TOTAL>=0.5 ~ "High")) %>% 
+  mutate(dinophyta=case_when(
+    DINOPHYTA/PROBE_TOTAL<=0.25 ~ "Low",
+    between(DINOPHYTA/PROBE_TOTAL,0.25,0.5) ~ "Medium",
+    DINOPHYTA/PROBE_TOTAL>=0.5 ~ "High")) %>% 
+  #alkalinity
+  mutate(alkalinity=case_when(
+    `ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL` <= 60 ~ "Soft",
+    between(`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,60,120) ~ "Moderately hard",
+    between(`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,120,180) ~ "Hard",
+    `ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL` >= 180 ~ "Very hard"))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
   mutate(statusTNT="Target",
          statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
 
-# get duplicates (multiple samples of same lake)
-n_occur <- data.frame(table(att$FID))
-dupes <- att[att$FID %in% n_occur$Var1[n_occur$Freq > 1],]
-
-# keep most recent august sample
-m_att <- att %>%
-  mutate(keep=case_when(
-    FID %in% dupes$FID & month(SAMPLE_DATE) != 9 & !is.na(`CHLOROPHYLL A_OW_TOTAL`) ~ "yes",
-    !(FID %in% dupes$FID) ~ "yes")) %>%
-  arrange(FID,desc(SAMPLE_DATE)) %>%
-  filter(keep=="yes")
-
-m_occur <- data.frame(table(m_att$FID))
-m_att <- m_att[!duplicated(m_att$FID),]
-
-att <- m_att %>%
-  distinct()
+# remove duplicates (multiple samples of same lake)
+att <- att %>%
+  mutate(SAMPLE_DATE = ymd(SAMPLE_DATE)) %>% # convert to date
+  mutate(month = month(SAMPLE_DATE)) %>% # extract month from date
+  group_by(siteID) %>%
+  mutate(has_aug = 8 %in% month) %>% # annotate as having date in august
+  filter(has_aug & month == 8 |
+           !has_aug) %>% # filter only august dates from sites with or all from those without
+  slice_max(n = 1,
+            order_by = SAMPLE_DATE,
+            with_ties = F) %>% # change with_ties to TRUE to discard NA values
+  select(-has_aug)
 
 att<-att %>% 
+  ungroup() %>% 
   mutate(WgtAdj=case_when(
          PROB_CAT=="(1,4]"~(1828/29),
          PROB_CAT=="(4,10]"~(2490/15),
@@ -337,9 +340,7 @@ att<-att %>%
          PROB_CAT=="(20,50]"~(616/20),
          PROB_CAT==">50"~(500/33)))
 
-framesize_LC <- c("New York State"=116) 
-
-rm(list=setdiff(ls(), c('newdata',"att","framesize_LC","sites")))
+rm(list=setdiff(ls(), c('newdata',"att","sites")))
 
 ```
 
@@ -352,7 +353,7 @@ In the future, the "weight" argument should be part of the site design and might
 ```{r analysis}
 
 #list variables you are interested in and defined above
-vars <- c("phos_trophic", "chla_trophic", "TP_threshold", "TN_threshold", "CHLA_threshold", "microcystin", "d.oxygen", "N_LIMIT", "secchi", "zebra", "conductance", "color", "ph", "leech", "chloride")
+vars <- c("phos_trophic", "chla_trophic", "TP_threshold", "TN_threshold", "CHLA_threshold", "microcystin", "d.oxygen", "N_LIMIT", "secchi", "zebra", "conductance", "color", "ph", "leech", "chloride","alkalinity","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
 
 #analysis
 CatExtent <- cat_analysis(
@@ -371,15 +372,34 @@ table <- CatExtent %>%
          LCB95Pct.P,
          UCB95Pct.P) %>% 
   filter(Category!="Total") %>% 
-  mutate(Category=factor(Category, levels=c("Good","Fair","Poor",
+  mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
                                             "Blue","Green","Brown","Murky",
-                                            "Uncolored","Weak","High",
+                                            "High","Weak","Uncolored",
+                                            "Medium","Low",
                                             "Acidic","~Neutral","Slightly alk","Highly alk",
                                             "Soft","Average","Hard",
-                                            "Not susceptible","May be susceptible","Highly susceptible",
-                                            "Oligo","Meso","Eu",
+                                            "Highly susceptible","May be susceptible","Not susceptible",
+                                            "Eutrophic","Mesotrophic","Oligotrophic",
                                             "N-limited","Co-limited","P-limited",
-                                            "Non-detect","Microcystin detected","Most disturbed")))
+                                            "Non-detect","Microcystin detected","Most disturbed")),
+         Indicator=case_when(
+           Indicator=="phos_trophic"~"Phosphorus", 
+           Indicator=="chla_trophic"~"Chlorophyll-a", 
+           Indicator=="TP_threshold"~"Total phosphorus", 
+           Indicator=="TN_threshold"~"Total nitrogen", 
+           Indicator=="CHLA_threshold"~"Total chlorophyll", 
+           Indicator=="microcystin"~"Microcystin",
+           Indicator=="d.oxygen"~"Dissolved oxygen",
+           Indicator=="N_LIMIT"~"Nutrient limitation", 
+           Indicator=="secchi"~"Secchi", 
+           Indicator=="zebra"~"Zebra mussel susceptibility", 
+           Indicator=="conductance"~"Hardness", 
+           Indicator=="color"~"Color", 
+           Indicator=="ph"~"pH", 
+           Indicator=="leech"~"Nutrient-color status", 
+           Indicator=="chloride"~"Chloride",
+           Indicator=TRUE~Indicator)
+         )
 
 hux <- as_hux(table) #I use huxtable because kable doesn't work on my computer but that is also fine 
 number_format(hux) <- 2
@@ -391,7 +411,7 @@ theme_plain(hux)
 
 Here I have plotted all the results together, but you could plot them individually.
 
-```{r dot plot, fig.height=10, fig.width=10}
+```{r dot plot, fig.height=5, fig.width=5}
 
 ggplot(table,aes(x=Category,y=Estimate.P)) +
   geom_point()+
@@ -403,17 +423,16 @@ ggplot(table,aes(x=Category,y=Estimate.P)) +
 
 ```
 
-```{r bar plot}
+```{r bar plot, fig.height=10, fig.width=5}
 
-ggplot(table[table$Indicator %in% c("phos_trophic","chla_trophic","secchi"),],aes(y=Estimate.P,x=Category,fill=Category))+
+# All
+ggplot(table,aes(y=Estimate.P,x=Category,fill=Category))+
   geom_col()+
   ylim(0,100)+
   geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
   coord_flip()+
   theme(axis.title.y = element_blank(), axis.text.y = element_blank(),axis.ticks.y = element_blank())+
-  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
-  scale_fill_discrete(name = "Trophic status", labels = c("Oligotrophic", "Mesotrophic", "Eutrophic"))
-
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")
 ```
 
 ## Other plots
