@@ -280,10 +280,10 @@ att<-att %>%
   )) %>% 
   #chloride
   mutate(chloride=case_when(
-    `CHLORIDE_OW_TOTAL` <= 25 ~ "Good",
-    between(`CHLORIDE_OW_TOTAL`,25,100) ~ "Fair",
-    `CHLORIDE_OW_TOTAL` >= 100 ~ "Poor",
-    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Good")) %>% 
+    `CHLORIDE_OW_TOTAL` <= 35 ~ "Low",
+    between(`CHLORIDE_OW_TOTAL`,35,250) ~ "Medium",
+    `CHLORIDE_OW_TOTAL` >= 250 ~ "High",
+    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low")) %>% 
   #chlorophyll
   rename(CHLOROPHYTE=`CHLOROPHYLL A (PROBE) CONCENTRATION, CHLOROPHYTE (GREEN ALGAE)_OW_NA`,
          CRYPTOPHYTA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CRYPTOPHYTA (CRYPTOPHYTES)_OW_NA`,

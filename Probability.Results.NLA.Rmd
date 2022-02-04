@@ -122,9 +122,9 @@ att<-att %>%
   )) %>% 
   #chloride
   mutate(chloride=case_when(
-    CHLORIDE <= 25 ~ "Low",
-    between(CHLORIDE,25,100) ~ "Medium",
-    CHLORIDE >= 100 ~ "High"))
+    CHLORIDE <= 35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE >= 250 ~ "High"))
 
 framesize_LC <- c("EPA"=5721) 
 
