@@ -74,9 +74,6 @@ att<-att %>%
 # should add up to 6437
 print(sum(att$WgtAdj))
 
-#number of evaluated lakes
-framesize_LC <- c("New York State"=116) 
-
 # Estimate TNT extent
 library(spsurvey)
 TNTextent <- cat_analysis(
@@ -87,7 +84,7 @@ TNTextent <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- TNTextent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- TNTextent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -102,7 +99,7 @@ TargetExtent <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- TargetExtent %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- TargetExtent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -116,7 +113,7 @@ Ammonia <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- Ammonia %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- Ammonia %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -130,7 +127,7 @@ DO <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- DO %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- DO %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -144,7 +141,7 @@ nitrite <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- nitrite %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- nitrite %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -158,7 +155,7 @@ ph <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- ph %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- ph %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -185,38 +182,34 @@ fully.support <- cat_analysis(
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- fully.support %>% select(Category,nResp,Estimate.U,LCB95Pct.U,UCB95Pct.U)
+table <- fully.support %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
 
-results <- rbind(Ammonia,DO,nitrite,ph,fully.support)
-
-totals <- results %>% 
-  select(Indicator,Category,Estimate.U) %>% 
-  rename(total=Estimate.U) %>% 
-  filter(Category=="Total")
-
-results <- merge(results,totals,by=c('Indicator'),all.x = TRUE)
-results <- results %>% 
-  mutate(pct=(Estimate.U/total)*100,
-         pct_lcb=(LCB95Pct.U/total)*100,
-         pct_ucb=(UCB95Pct.U/total)*100,
-         Indicator=case_when(
-           Indicator=="x" ~ "all parameters",
-           Indicator=TRUE ~ Indicator
-         )) %>% 
-  rename(Category=Category.x) %>% 
-  filter(Category==0) %>% 
-  mutate(Category="Non-Excursions") %>% 
-  select(Indicator,Category,pct,pct_lcb,pct_ucb)
+results <- rbind(Ammonia,DO,nitrite,ph,fully.support) %>% 
+  filter(Category!="Total") %>% 
+  mutate(Indicator=case_when(
+    Indicator=="x" ~ "all parameters",
+    Indicator=TRUE ~ Indicator),
+    Category=case_when(
+      Indicator=="all parameters" & Category>1 ~ "1",
+      Category=TRUE ~ Category
+    )) %>% 
+  rename(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>%
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  group_by(Indicator,Category) %>% 
+  summarize(pct=(sum(pct)),pct_lcb=sum(pct_lcb),pct_ucb=sum(pct_ucb)) %>% 
+  ungroup()
 
 results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","all parameters"))
 
 #side by side plots
-print(ggplot(results,aes(x=Indicator,y=pct)) +
+print(ggplot(results,aes(x=Indicator,y=pct,fill=Category)) +
   geom_bar(stat = "identity") +
-  geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2,position=position_dodge(width=0.2)) +
+  # geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2,position=position_dodge(width=0.2)) +
   ylim(0,130)+
   # facet_grid( ~ Indicator, switch="x") +
   # theme(panel.spacing = unit(0, "lines"),
