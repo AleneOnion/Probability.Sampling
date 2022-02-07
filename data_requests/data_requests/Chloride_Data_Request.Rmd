@@ -17,10 +17,10 @@ This map shows all the lakes in the Adirondacks with chloride data in the LMAS d
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
 sites<-newdata %>% 
-  filter(CHARACTERISTIC_NAME == "DEPTH, SECCHI DISK DEPTH") %>% 
+  filter(CHARACTERISTIC_NAME == "CHLORIDE") %>% 
          #INFORMATION_TYPE=="BS",
-         #RSLT_VALIDATOR_QUALIFIER!="R"|is.na(RSLT_VALIDATOR_QUALIFIER)) %>% 
-  #mutate(RSLT_RESULT_VALUE=ifelse(RSLT_VALIDATOR_QUALIFIER=="U",0,RSLT_RESULT_VALUE)) %>% 
+         RSLT_VALIDATOR_QUALIFIER!="R"|is.na(RSLT_VALIDATOR_QUALIFIER)) %>% 
+  mutate(RSLT_RESULT_VALUE=ifelse(RSLT_VALIDATOR_QUALIFIER=="U",0,RSLT_RESULT_VALUE)) %>% 
   filter(!is.na(RSLT_RESULT_VALUE)) %>% 
   select(LAKE_HISTORY_ID,LAKE_FIN,LOCATION_X_COORDINATE,LOCATION_Y_COORDINATE) %>% distinct()
 blueline<-read.csv("C:/Users/amonion/OneDrive - New York State Office of Information Technology Services/Lakes.Database/data/2021/data_requests/ADK_Lakes_Blue_Line.csv")
