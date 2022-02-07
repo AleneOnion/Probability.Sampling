@@ -36,7 +36,7 @@ setwd("~/OneDrive - New York State Office of Information Technology Services/Rsc
 chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
 
 chem <- chem %>% 
-  filter(ANALYTE %in% c("NTL","CHLA","PTL"),
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE"),
          NARS_FLAG == "") %>% 
   select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
@@ -80,6 +80,8 @@ att$CHLA <- as.numeric(att$CHLA)
 att$TN <- as.numeric(att$TN)
 att$TP <- as.numeric(att$TP)
 att$OXYGEN <- as.numeric(att$OXYGEN)
+att$COLOR <- as.numeric(att$COLOR)
+att$DINTP <- as.numeric(att$NITRATE_N)/(as.numeric(att$TP)/1000)
   
 # selecting parameters and adding trophic status
 
@@ -110,7 +112,19 @@ att<-att %>%
   mutate(d.oxygen=case_when(
     OXYGEN<=3 ~ "Poor",
     between(OXYGEN, 3, 5) ~ "Fair",
-    OXYGEN>=5 ~ "Good"))
+    OXYGEN>=5 ~ "Good")) %>% 
+  #leech
+  mutate(leech=case_when(
+    TP<=30 & COLOR<=20 ~ "Blue",
+    TP>30 & COLOR<=20 ~ "Green",
+    TP<=30 & COLOR>20 ~ "Brown",
+    TP>30 & COLOR>20 ~ "Murky"
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    CHLORIDE <= 35 ~ "Low",
+    between(CHLORIDE,35,100) ~ "Medium",
+    CHLORIDE >= 100 ~ "High"))
 
 framesize_LC <- c("EPA"=4271) 
 
@@ -263,7 +277,35 @@ ggplot(forplot5, aes(x=Category)) +
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
   labs(title="Trophic Classes in NLA vs. NY Probability vs. LMAS",y="Percent of Total",x="Trophic Classes")
-  
+
+##### CHLORIDE #####
+CatExtent <- cat_analysis(
+  dframe=att,
+  vars=c("chloride"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot.chloride<-CatExtent %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",Subpopulation=="yes") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category)
+
+table <- forplot.chloride %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+
 ```
 
 ## Comparison to NLA thresholds
@@ -563,7 +605,7 @@ forplot6<-forplot %>%
           study="NY",
           percent=91.39,
           pct_lcb=69.86,
-          pct_ucb=112.92) %>% 
+          pct_ucb=100) %>% 
   add_row(Indicator="Dissolved Oxygen",
           Category="Fair",
           study="NY",
@@ -576,18 +618,185 @@ forplot6<-forplot %>%
           percent=7.36,
           pct_lcb=0,
           pct_ucb=18.59) %>% 
+  add_row(Indicator="chloride",
+          Category="High",
+          study="NAP",
+          percent=19.79,
+          pct_lcb=12.33,
+          pct_ucb=27.26) %>% 
+  add_row(Indicator="chloride",
+          Category="Low",
+          study="NAP",
+          percent=72.75,
+          pct_lcb=63.81,
+          pct_ucb=81.70) %>% 
+  add_row(Indicator="chloride",
+          Category="Medium",
+          study="NAP",
+          percent=7.45,
+          pct_lcb=1.48,
+          pct_ucb=13.42) %>% 
+  add_row(Indicator="chloride",
+          Category="High",
+          study="NY",
+          percent=0,
+          pct_lcb=0.00,
+          pct_ucb=0) %>% 
+  add_row(Indicator="chloride",
+          Category="Low",
+          study="NY",
+          percent=84.40,
+          pct_lcb=74.18,
+          pct_ucb=94.61) %>%
+  add_row(Indicator="chloride",
+          Category="Medium",
+          study="NY",
+          percent=15.60,
+          pct_lcb=5.39,
+          pct_ucb=25.82) %>% 
+  add_row(Indicator="chloride",
+          Category="High",
+          study="NLA",
+          percent=19.56,
+          pct_lcb=15.98,
+          pct_ucb=23.15) %>%
+  add_row(Indicator="chloride",
+          Category="Low",
+          study="NLA",
+          percent=70.68,
+          pct_lcb=66.19,
+          pct_ucb=75.17) %>% 
+  add_row(Indicator="chloride",
+          Category="Medium",
+          study="NLA",
+          percent=9.76,
+          pct_lcb=6.71,
+          pct_ucb=12.80) %>% 
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
-
-forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor"))
+forplot6$Category <- factor(forplot6$Category, levels=c(c("Good","Fair","Poor"),c("Low", "Medium", "High")))
 
 ggplot(forplot6, aes(x=Category,fill=study)) +
   geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
   geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(~Indicator,scales = "free")+
+  ylim(0,100)+
+  labs(title="Condition estimates in  NLA vs. Northern Appalachian vs. NY",y="Percent of Total",x="Condition Classes")
+```
+
+## Leech nutrient-color
+
+```{r,echo=FALSE,results="asis",message=FALSE,warning=FALSE}
+
+print(
+  ggplot(att,aes(x=TP,y=COLOR,color=leech))+
+    geom_point()+
+    geom_vline(xintercept=30)+
+    geom_hline(yintercept=20)+
+    scale_y_continuous(trans='log10')+
+    scale_x_continuous(trans='log10')+
+    scale_color_manual(values=c("blue", "brown", "green","#E69F00")))
+
+CatExtent2 <- cat_analysis(
+  dframe=att,
+  vars=c("leech"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+forplot2<-CatExtent2 %>% 
+  mutate(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  distinct() %>% 
+  gather(percent,results,-Indicator,-Category) %>% 
+  mutate(Indicator=ifelse(Indicator=="leech","Lake nutrient-color status",Indicator))
+
+table <- forplot2 %>% 
+  spread(percent,results)  %>% 
+  rename(Percentage=pct,Lower95Confidence=pct_lcb,Upper95Confidence=pct_ucb)
+
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+ggplot(table,aes(x=Category,y=Percentage)) +
+  geom_point()+
+  geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
+  theme(legend.position = "none")+
   facet_wrap(~Indicator,scales = "free_y")+
   ylim(0,100)+
-  labs(title="EPA condition categories in  NLA vs. Northern Appalachian vs. NY",y="Percent of Total",x="EPA Condition Classes")
+  labs(title="Lake nutrient-color status across Northern Appalachian ponded waters",y="Percent of Total",x="Lake nutrient-color status")
+
+forplot<-forplot2 %>% 
+  spread(percent,results) %>% 
+  rename(percent=pct) %>% 
+  mutate(study="NLA") %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Blue",
+          study="NAP",
+          percent=45.15,
+          pct_lcb=33.41,
+          pct_ucb=56.90) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Brown",
+          study="NAP",
+          percent=46.93,
+          pct_lcb=35.32,
+          pct_ucb=58.54) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Green",
+          study="NAP",
+          percent=1.95,
+          pct_lcb=0.76,
+          pct_ucb=3.15) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Murky",
+          study="NAP",
+          percent=5.96,
+          pct_lcb=2.37,
+          pct_ucb=9.56) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Blue",
+          study="NYS",
+          percent=20.73,
+          pct_lcb=6.73,
+          pct_ucb=34.74) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Brown",
+          study="NYS",
+          percent=52.22,
+          pct_lcb=20.26,
+          pct_ucb=84.18) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Green",
+          study="NYS",
+          percent=1.22,
+          pct_lcb=0.00,
+          pct_ucb=3.35) %>% 
+  add_row(Indicator="Lake nutrient-color status",
+          Category="Murky",
+          study="NYS",
+          percent=25.83,
+          pct_lcb=5.51,
+          pct_ucb=46.16) %>% 
+  mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
+         pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
+  
+
+ggplot(forplot, aes(x=Category,fill=study)) +
+  geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
+  geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(~Indicator,scales = "free_y")+
+  ylim(0,100)+
+  labs(title="Lake nutrient-color status in  NLA vs. Northern Appalachian vs. NY",y="Percent of Total",x="Lake nutrient-color status")
+
 ```
 
 ## Sites map

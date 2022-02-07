@@ -1,9 +1,14 @@
 rm(list=setdiff(ls(), c("newdata")))
 #read in the database if you need it
 #(but you might not)
-setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Current")
-source("new_database/Reading.LMAS.Data.R")
-setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Probability.Sampling")
+# setwd("C:\Users\amonion\New York State Office of Information Technology Services\BWAM - Lakes Database\Current")
+# source("new_database/Reading.LMAS.Data.R")
+# setwd("C:/Users/leneo/Dropbox/Alene/Rscripts/Probability.Sampling")
+
+#or
+# setwd("C:/Users/amonion/New York State Office of Information Technology Services/BWAM - Lakes Database/Current")
+# source("new_database/Reading.LMAS.Data.R")
+# setwd("C:/Users/amonion/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling")
 
 
 library(tidyverse)

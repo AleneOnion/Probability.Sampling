@@ -1,0 +1,228 @@
+---
+title: "Generate plots"
+author: "Sabrina Xie"
+date: "2/2/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+DON'T KNIT!!!!
+
+Run Probability.Sampling.BASE.Rmd chunks 1-6, then run chunk for plot(s) you want
+
+List of indicators:
+Indicator=case_when(
+           Indicator=="phos_trophic"~"Phosphorus", 
+           Indicator=="chla_trophic"~"Chlorophyll-a", 
+           Indicator=="TP_threshold"~"Total phosphorus", 
+           Indicator=="TN_threshold"~"Total nitrogen", 
+           Indicator=="CHLA_threshold"~"Total chlorophyll", 
+           Indicator=="microcystin"~"Microcystin",
+           Indicator=="d.oxygen"~"Dissolved oxygen",
+           Indicator=="N_LIMIT"~"Nutrient limitation", 
+           Indicator=="secchi"~"Secchi", 
+           Indicator=="zebra"~"Zebra mussel susceptibility", 
+           Indicator=="conductance"~"Hardness", 
+           Indicator=="color"~"Color", 
+           Indicator=="ph"~"pH", 
+           Indicator=="leech"~"Nutrient-color status", 
+           Indicator=="chloride"~"Chloride")
+
+# Trophic State Indicators
+
+```{r trophic, fig.height=3, fig.width=6}
+vars <- c("Phosphorus","Chlorophyll-a","Secchi")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r nutrient limitation, fig.height=1, fig.width=2}
+vars <- c("Nutrient limitation")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r leech, fig.height=1, fig.width=2}
+vars <- c("Nutrient-color status")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+
+
+# Chemical 1
+
+```{r ph, fig.height=1, fig.width=2}
+vars <- c("pH")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+
+```{r oxygen, fig.height=1, fig.width=2}
+vars <- c("Dissolved oxygen")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+  
+```{r nutrients, fig.height=2, fig.width=4}
+vars <- c("Total nitrogen","Total phosphorus")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+	
+# Chemical 2
+
+```{r hardness, fig.height=1, fig.width=2}
+vars <- c("Hardness")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r alkalinity, fig.height=1, fig.width=2}
+vars <- c("pH")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r ca, fig.height=1, fig.width=2}
+vars <- c("Zebra mussel susceptibility")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r color, fig.height=1, fig.width=2}
+vars <- c("Color")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+```{r chloride, fig.height=1, fig.width=2}
+vars <- c("Chloride")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+
+
+# Human Use
+
+```{r chla, fig.height=1, fig.width=2}
+vars <- c("Total chlorophyll")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+	
+
+```{r microcystin, fig.height=1, fig.width=2}
+vars <- c("Microcystin")
+
+ggplot(table[table$Indicator %in% vars,],aes(y=Estimate.P,x=Category,fill=Category))+
+  geom_col()+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+  coord_flip()+
+  theme(axis.title.y = element_blank(), axis.text.y = element_blank(), axis.ticks.y = element_blank(), legend.title=element_blank())+
+  facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")+
+  labs(y="Percent of Total")
+
+```
+
