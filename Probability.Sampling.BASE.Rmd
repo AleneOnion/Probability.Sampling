@@ -377,7 +377,7 @@ table <- CatExtent %>%
                                             "High","Weak","Uncolored",
                                             "Medium","Low",
                                             "Acidic","~Neutral","Slightly alk","Highly alk",
-                                            "Soft","Average","Hard",
+                                            "Soft","Moderately hard","Average","Hard","Very hard",
                                             "Highly susceptible","May be susceptible","Not susceptible",
                                             "Eutrophic","Mesotrophic","Oligotrophic",
                                             "N-limited","Co-limited","P-limited",
