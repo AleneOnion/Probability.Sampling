@@ -411,7 +411,7 @@ theme_plain(hux)
 
 Here I have plotted all the results together, but you could plot them individually.
 
-```{r dot plot, fig.height=5, fig.width=5}
+```{r dot plot, fig.height=10, fig.width=10}
 
 ggplot(table,aes(x=Category,y=Estimate.P)) +
   geom_point()+
@@ -423,7 +423,7 @@ ggplot(table,aes(x=Category,y=Estimate.P)) +
 
 ```
 
-```{r bar plot, fig.height=10, fig.width=5}
+```{r bar plot, fig.height=20, fig.width=10}
 
 # All
 ggplot(table,aes(y=Estimate.P,x=Category,fill=Category))+

@@ -43,6 +43,20 @@ att<-att %>%
     AREA_HA>2.63 ~ "yes",
     SITE_ID=TRUE ~ "no"))
 
+chem <- read.csv("BasicNHChem_ForNY.csv")
+
+#merge
+
+att <- merge(att,chem,by.x="SITE_ID",by.y="NLA.ID",all.x=T) %>% 
+  mutate(CHLORIDE=case_when(
+    CHLORIDE!="<3" ~ as.numeric(CHLORIDE),
+    CHLORIDE=="<3" ~ 0)) %>% 
+  mutate(CHLORIDE_threshold=case_when(
+    CHLORIDE<=35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE>=250 ~ "High"
+  ))
+
 framesize_LC <- c("NH"=3596) 
 
 ```
@@ -92,7 +106,7 @@ The following code performs the analysis against EPA's condition thresholds as u
 # Estimate assessment result
 CatExtent <- cat_analysis(
   dframe=att,
-  vars=c("EPA_Chla","EPA_TN","EPA_TP","DO"),
+  vars=c("EPA_Chla","EPA_TN","EPA_TP","DO","CHLORIDE_threshold"),
   subpops = "include",
   siteID = "SITE_ID",
   weight = "WGT_TP_EXT",
@@ -107,10 +121,12 @@ forplot<-CatExtent %>%
   select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
   distinct() %>% 
   gather(percent,results,-Indicator,-Category) %>% 
-  mutate(Indicator=ifelse(Indicator=="EPA_Chla","ChlA",Indicator),
-         Indicator=ifelse(Indicator=="EPA_TP","Phosphorus",Indicator),
-         Indicator=ifelse(Indicator=="EPA_TN","Total Nitrogen",Indicator),
-         Indicator=ifelse(Indicator=="DO","Dissolved Oxygen",Indicator))
+  mutate(Indicator=case_when(
+    Indicator=="EPA_Chla" ~ "ChlA",
+    Indicator=="EPA_TP" ~ "Phosphorus",
+    Indicator=="EPA_TN" ~ "Total Nitrogen",
+    Indicator=="DO" ~ "Dissolved Oxygen",
+    Indicator=="CHLORIDE_threshold" ~ "Chloride"))
 
 table <- forplot %>% 
   spread(percent,results)  %>% 
@@ -120,15 +136,15 @@ hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
 
-table$Category <- factor(table$Category, levels=c("Good", "Fair", "Poor"))
+table$Category <- factor(table$Category, levels=c("Good", "Fair", "Poor","Low","Medium","High"))
 
 ggplot(table,aes(x=Category,y=Percentage)) +
   geom_point()+
   geom_errorbar(aes(ymin=Lower95Confidence,ymax=Upper95Confidence),width=0.2)+
   theme(legend.position = "none")+
-  facet_wrap(~Indicator,scales = "free_y")+
+  facet_wrap(~Indicator,scales = "free")+
   ylim(0,100)+
-  labs(title="Distribution of Northern Appalachians ponded waters across EPA thresholds",y="Percent of Total",x="EPA threshold")
+  labs(title="New Hampshire condition estimates",y="Percent of Total",x="Threshold")
 ```
 
 
@@ -289,7 +305,7 @@ forplot6<-forplot %>%
           study="NY",
           percent=91.39,
           pct_lcb=69.86,
-          pct_ucb=112.92) %>% 
+          pct_ucb=100) %>% 
   add_row(Indicator="Dissolved Oxygen",
           Category="Fair",
           study="NY",
@@ -302,6 +318,12 @@ forplot6<-forplot %>%
           percent=7.36,
           pct_lcb=0,
           pct_ucb=18.59) %>% 
+  add_row(Indicator="Dissolved Oxygen",
+          Category="Poor",
+          study="NH",
+          percent=0,
+          pct_lcb=0,
+          pct_ucb=0) %>% 
   add_row(Indicator="ChlA", #NLA results
           Category="Good",
           study="NLA",
@@ -356,18 +378,78 @@ forplot6<-forplot %>%
           percent=51.12,
           pct_lcb=45.79,
           pct_ucb=56.45) %>% 
+    add_row(Indicator="Chloride",
+          Category="High",
+          study="NAP",
+          percent=19.79,
+          pct_lcb=12.33,
+          pct_ucb=27.26) %>% 
+  add_row(Indicator="Chloride",
+          Category="Low",
+          study="NAP",
+          percent=72.75,
+          pct_lcb=63.81,
+          pct_ucb=81.70) %>% 
+  add_row(Indicator="Chloride",
+          Category="Medium",
+          study="NAP",
+          percent=7.45,
+          pct_lcb=1.48,
+          pct_ucb=13.42) %>% 
+  add_row(Indicator="Chloride",
+          Category="High",
+          study="NY",
+          percent=0,
+          pct_lcb=0.00,
+          pct_ucb=0) %>% 
+  add_row(Indicator="Chloride",
+          Category="Low",
+          study="NY",
+          percent=84.40,
+          pct_lcb=74.18,
+          pct_ucb=94.61) %>%
+  add_row(Indicator="Chloride",
+          Category="Medium",
+          study="NY",
+          percent=15.60,
+          pct_lcb=5.39,
+          pct_ucb=25.82) %>% 
+  add_row(Indicator="Chloride",
+          Category="High",
+          study="NLA",
+          percent=19.56,
+          pct_lcb=15.98,
+          pct_ucb=23.15) %>%
+  add_row(Indicator="Chloride",
+          Category="Low",
+          study="NLA",
+          percent=70.68,
+          pct_lcb=66.19,
+          pct_ucb=75.17) %>% 
+  add_row(Indicator="Chloride",
+          Category="Medium",
+          study="NLA",
+          percent=9.76,
+          pct_lcb=6.71,
+          pct_ucb=12.80) %>%
+  add_row(Indicator="Chloride",
+          Category="High",
+          study="NH",
+          percent=0,
+          pct_lcb=0,
+          pct_ucb=0) %>%
   mutate(pct_lcb=ifelse(is.na(pct_lcb),percent,pct_lcb),
          pct_ucb=ifelse(is.na(pct_ucb),percent,pct_ucb))
   
 
-forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor"))
+forplot6$Category <- factor(forplot6$Category, levels=c("Good","Fair","Poor","Low","Medium","High"))
 
 ggplot(forplot6, aes(x=Category,fill=study)) +
   geom_point(aes(y=percent,color=study),stat = "identity", position=position_dodge(width=0.2))+
   geom_errorbar(aes(ymin=pct_lcb, ymax=pct_ucb,color=study), width=.25, position=position_dodge(width=0.2))+
-  facet_wrap(~Indicator,scales = "free_y")+
+  facet_wrap(~Indicator,scales = "free")+
   ylim(0,100)+
-  labs(title="EPA condition categories in  NLA, Northern Appalachian, NY, NH",y="Percent of Total",x="EPA Condition Classes")
+  labs(title="Condition estimates in  NLA, Northern Appalachian, NY, NH",y="Percent of total",x="Condition categories")
 ```
 
 
