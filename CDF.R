@@ -1,39 +1,38 @@
+##### EXAMPLE #####
 
-##### NEW YORK #####
-#Load in att from Probability.Sampling.BASE
+# #To conduct analysis on a continuous variable:
+# 
+# analysis <- cont_analysis(
+#   dframe = att,
+#   vars = myvars,
+#   subpops = ,
+#   siteID = "siteID",
+#   weight = "WgtAdj",
+#   xcoord = "xcoord",
+#   ycoord = "ycoord")
+# 
+# #Creates 3 estimations in list: CDF, percentiles, means.
+# 
+# #To plot a cumulative distribution function:
+# 
+# ggplot(analysis$CDF,aes(x=Value,y=Estimate.P,color=Study,shape=Study))+
+#   geom_line()+
+#   geom_line(aes(y=UCB95Pct.P,alpha=0.2),linetype = 2)+ #can use geom_ribbon() instead
+#   geom_line(aes(y=LCB95Pct.P,alpha=0.2),linetype = 2)+
+#   ylim(0,100)+
+#   facet_wrap(.~Indicator, scales="free")
 
-att <- att %>% rename(CHLOROPHYLL_A_OW_TOTAL=`CHLOROPHYLL A_OW_TOTAL`,
-                      NITROGEN_TOTAL_OW_TOTAL=`NITROGEN, TOTAL_OW_TOTAL`,
-                      PHOSPHORUS_TOTAL_OW_TOTAL=`PHOSPHORUS, TOTAL_OW_TOTAL`,
-                      DISSOLVED_OXYGEN_epi=`DISSOLVED OXYGEN_epi`) %>% 
-  mutate(PHOSPHORUS_TOTAL_OW_TOTAL=PHOSPHORUS_TOTAL_OW_TOTAL*1000)
-myvars <- c("CHLOROPHYLL_A_OW_TOTAL","NITROGEN_TOTAL_OW_TOTAL","PHOSPHORUS_TOTAL_OW_TOTAL","DISSOLVED_OXYGEN_epi","CHLORIDE_OW_TOTAL")
 
-#continuous variable analysis, spits out CDF, percentiles, means
-analysis <- cont_analysis(
-  dframe = att,
-  vars = myvars,
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
 
-NY<-analysis$CDF %>% 
-  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NY")
+##---- NEW HAMPSHIRE ----
 
-#check for 175 obs
-
-##### NEW HAMPSHIRE #####
-#Load in att from Probability.Sampling.NH
-att <- att %>% 
+nh.att <- nh.att %>% 
   mutate(TN_UG.L=TN_UG.L/1000)
 myvars <- c("CHLOROPHYLL.A.x","TN_UG.L","PHOSPHORUS.ug.L.x","CHLORIDE")
 
 #continuous variable analysis, spits out CDF, percentiles, means
 analysis <- cont_analysis(
-  dframe = att,
+  dframe = nh.att,
   vars = myvars,
   subpops = ,
   siteID = "SITE_ID",
@@ -44,16 +43,14 @@ analysis <- cont_analysis(
 NH<-analysis$CDF %>% 
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NH")
-#Check for 158 obs
 
 ##### NORTHERN APPLACHIAN  #####
-#Load in att from Probability.Sampling.NLA
 
 myvars <- c("CHLA","TN","TP","CHLORIDE","OXYGEN")
 
 #continuous variable analysis, spits out CDF, percentiles, means
 analysis <- cont_analysis(
-  dframe = att,
+  dframe = nap.att,
   vars = myvars,
   subpops = "include",
   siteID = "SITE_ID",
@@ -65,14 +62,13 @@ NAP<-analysis$CDF %>%
   filter(Subpopulation=="yes") %>% 
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NAP")
-#Check for 4447 obs
 
 ##### NATIONAL  #####
 #Load in att from Probability.Sampling.NLA.NYS.2021
 
 #continuous variable analysis, spits out CDF, percentiles, means
 analysis <- cont_analysis(
-  dframe = att,
+  dframe = nla.att,
   vars = myvars,
   subpops = "include",
   siteID = "SITE_ID",

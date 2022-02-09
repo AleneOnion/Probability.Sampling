@@ -192,14 +192,7 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
 att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
 att<-att %>% spread(chemical_name,result_value,fill = NA)
 
-
-```
-
-## Creating thresholds
-
-Create any desired thresholds. I use a case_when() statement.
-
-```{r thresholds}
+#creating thresholds
 att<-att %>% 
   # remove fields in the sites table that aren't relevant
   select(-Accessible,-Comments,-Contact,-STATUS) %>%
@@ -344,13 +337,153 @@ rm(list=setdiff(ls(), c('newdata',"att","sites")))
 
 ```
 
-## Analysis
+Additionally, I will load in NLA, NAP and NH data:
+
+```{r NLA/NAP data}
+
+# read in NLA data
+setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
+
+chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
+
+chem <- chem %>% 
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE"),
+         NARS_FLAG == "") %>% 
+  select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
+  pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
+  rename(TN=NTL,TP=PTL)
+
+oxygen <- read.csv("nla_2017_profile-data.csv")
+
+oxygen <- oxygen %>% 
+  select(UID,SITE_ID,DATE_COL,DEPTH,OXYGEN) %>% 
+  # dissolved oxygen:
+  # keep DO values between 0 and 2m depth
+  mutate(keep=case_when(
+    DEPTH <= 2 ~ "yes",
+    DEPTH > 2 ~ "no")) %>%
+  filter(keep=="yes") %>%
+  select(-keep)
+
+# mean DO for each lake
+DO <- aggregate(oxygen$OXYGEN,list(oxygen$SITE_ID,oxygen$DATE_COL),FUN=mean)
+# add back in
+oxygen <- merge(oxygen,DO,by.x=c("SITE_ID","DATE_COL"),by.y=c("Group.1","Group.2"),all.x=TRUE)
+oxygen$x <- as.numeric(oxygen$x)
+oxygen <- oxygen %>% 
+  select(-c(DEPTH,OXYGEN)) %>%
+  rename(OXYGEN=x) %>% 
+  distinct()
+
+att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
+att.nla$CHLA <- as.numeric(att.nla$CHLA)
+att.nla$TN <- as.numeric(att.nla$TN)
+att.nla$TP <- as.numeric(att.nla$TP)
+att.nla$CHLORIDE <- as.numeric(att.nla$CHLORIDE)
+att.nla$OXYGEN <- as.numeric(att.nla$OXYGEN)
+att.nla$COLOR <- as.numeric(att.nla$COLOR)
+att.nla$DINTP <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000)
+  
+# selecting parameters and adding trophic status
+
+att.nla<-att.nla %>% 
+  # trophic status
+  mutate(phos_trophic=case_when(
+    TP<=10 ~ "oligotrophic",
+    between(TP,10,20) ~ "mesotrophic",
+    TP>=20 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    CHLA<=2 ~ "oligotrophic",
+    between(CHLA,2,8) ~ "mesotrophic",
+    CHLA>=8 ~ "eutrophic")) %>%
+  # EPA thresholds
+  mutate(TP_threshold=case_when(
+    TP<=16 ~ "Good",
+    between(TP, 16, 27.9) ~ "Fair",
+    TP>=27.9 ~ "Poor")) %>%
+  mutate(TN_threshold=case_when(
+    TN<=0.428 ~ "Good",
+    between(TN, 0.428, 0.655) ~ "Fair",
+    TN>=0.655 ~ "Poor")) %>%
+  mutate(CHLA_threshold=case_when(
+    CHLA<=4.52 ~ "Good",
+    between(CHLA, 4.52, 8.43) ~ "Fair",
+    CHLA>=8.43 ~ "Poor")) %>%
+  # dissolved oxygen
+  mutate(d.oxygen=case_when(
+    OXYGEN<=3 ~ "Poor",
+    between(OXYGEN, 3, 5) ~ "Fair",
+    OXYGEN>=5 ~ "Good")) %>% 
+  #leech
+  mutate(leech=case_when(
+    TP<=30 & COLOR<=20 ~ "Blue",
+    TP>30 & COLOR<=20 ~ "Green",
+    TP<=30 & COLOR>20 ~ "Brown",
+    TP>30 & COLOR>20 ~ "Murky"
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    CHLORIDE <= 35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE >= 250 ~ "High"))
+
+sites <- read.csv("nla_2017_site_information-data.csv")
+
+nap.sites <- sites %>% 
+  mutate(include=case_when(
+    AG_ECO9=="NAP" & AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
+
+nla.sites <- sites %>% 
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
+
+nla.att <- merge(att.nla,nla.sites,by=c("UID","SITE_ID"))
+nap.att <- merge(att.nla,nap.sites,by=c("UID","SITE_ID"))
+
+```
+
+```{r NH data}
+
+nh.att <- read.csv("New_Hampshire_Lakes_2017_Design_Status_20211027_KH_EPA.csv", na.strings=c(""," ","NA"))
+
+# selecting parameters and adding trophic status
+
+nh.att<-nh.att %>% 
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"))
+
+chem <- read.csv("BasicNHChem_ForNY.csv")
+
+#merge
+
+nh.att <- merge(nh.att,chem,by.x="SITE_ID",by.y="NLA.ID",all.x=T) %>% 
+  mutate(CHLORIDE=case_when(
+    CHLORIDE!="<3" ~ as.numeric(CHLORIDE),
+    CHLORIDE=="<3" ~ 0)) %>% 
+  mutate(CHLORIDE_threshold=case_when(
+    CHLORIDE<=35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE>=250 ~ "High"
+  ))
+
+```
+
+## Categorical Variable Analysis
 
 Here I perform the analysis using cat_analysis(). The relevant categorical variable / threshold should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe.
 
 In the future, the "weight" argument should be part of the site design and might not be called "WgtAdj".
 
-```{r analysis}
+```{r cat analysis}
 
 #list variables you are interested in and defined above
 vars <- c("phos_trophic", "chla_trophic", "TP_threshold", "TN_threshold", "CHLA_threshold", "microcystin", "d.oxygen", "N_LIMIT", "secchi", "zebra", "conductance", "color", "ph", "leech", "chloride","alkalinity","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
@@ -405,11 +538,66 @@ hux <- as_hux(table) #I use huxtable because kable doesn't work on my computer b
 number_format(hux) <- 2
 theme_plain(hux)
 
+ny.cat <- table %>% filter(Indicator %in% c("Total phosphorus","Total nitrogen","Total chlorophyll","Dissolved oxygen","Chloride")) %>% mutate(Study="NY")
+
 ```
 
-## Plots
+## Continuous Variable Analysis
 
-Here I have plotted all the results together, but you could plot them individually.
+Here I perform the analysis using cont_analysis(). The relevant CONTINUOUS variable should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe with all. The output of this function is a list with 3 estimations: cumulative distribution function (CDF), percentiles, and means.
+
+As above, in the future the "weight" argument should be part of the site design and might not be called "WgtAdj".
+
+```{r cont analysis}
+
+#To conduct analysis on a continuous variable, using a new list of CONTINUOUS variables, also note that cont_analysis() doesn't like variable names that have spaces so you will need to rename these. It's helpful to put the units in the name.
+
+att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
+                      "NITROGEN_mg_L"=`NITROGEN, TOTAL_OW_TOTAL`,
+                      "PHOSPHORUS_mg_L"=`PHOSPHORUS, TOTAL_OW_TOTAL`,
+                      "DISSOLVED_OXYGEN_mg_L"=`DISSOLVED OXYGEN_epi`,
+                      "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
+                      "CHLORIDE_mg_L"=CHLORIDE_OW_TOTAL,
+                      "CALCIUM_mg_L"=CALCIUM_OW_TOTAL)
+
+vars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","DISSOLVED_OXYGEN_mg_L","CHLORIDE_mg_L","CALCIUM_mg_L","ALKALINITY_mg_L")
+
+#Creates 3 estimations in list: CDF, percentiles, means.
+analysis <- cont_analysis(
+  dframe = att,
+  vars = vars,
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L")
+
+NY<-analysis$CDF %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NY") %>% 
+  mutate(Value=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~as.numeric(Value)*1000,
+    Indicator=TRUE~as.numeric(Value)
+  )) %>% 
+  mutate(Indicator=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~"PHOSPHORUS_ug_L",
+    Indicator=TRUE~Indicator
+  )) %>% 
+ filter(Indicator %in% c(myvars))
+
+str(analysis)
+
+```
+
+
+## Plots {.tabset .tabset-fade}
+
+Here are some plots with the data.
+To compare to NLA data, run the same analysis code above for NLA relevant data. Create a "study" column and plot grouped/colored by "study".
+
+### Category dot plot
 
 ```{r dot plot, fig.height=10, fig.width=10}
 
@@ -423,6 +611,8 @@ ggplot(table,aes(x=Category,y=Estimate.P)) +
 
 ```
 
+### Category bar plot
+
 ```{r bar plot, fig.height=20, fig.width=10}
 
 # All
@@ -435,11 +625,22 @@ ggplot(table,aes(y=Estimate.P,x=Category,fill=Category))+
   facet_wrap(.~Indicator,scales = "free_y",ncol=1,strip.position = "left")
 ```
 
-## Other plots
+### Cumulative distribution function
 
-To compare to NLA data, run the same analysis code above for NLA relevant data. Create a "study" column and plot grouped/colored by "study".
+```{r cdf, fig.height=10, fig.width=10}
 
-To create maps: 
+#To plot a cumulative distribution function:
+ggplot(analysis$CDF,aes(x=Value,y=Estimate.P,fill=Indicator,shape=Indicator,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  facet_wrap(.~Indicator, scales="free")+
+  guides(fill=FALSE,shape=FALSE)+
+  labs(y="Percent of lakes")
+```
+
+### Map
 
 ```{r map}
 
@@ -450,14 +651,6 @@ library(maps)
 states <- map_data("state")
 ny <- subset(states, region %in% c("new york"))
 
-ggplot() + 
-  geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
-  coord_fixed(1.3) +
-  geom_point(data=sites,aes(x=xcoord,y=ycoord,color=(Eval_Status=="Target_Sampled")))+
-  guides(fill=FALSE) +
-  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))  # do this to leave off all the things
-
 att$CHLA_threshold <- factor(att$CHLA_threshold, levels=c("Good","Fair","Poor"))
 ggplot() + 
   geom_polygon(data=ny,aes(x = long, y = lat, group = group), color = "white") + 
@@ -467,4 +660,204 @@ ggplot() +
   theme(panel.border = element_blank(), panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))
 
+```
+
+## Comparisons {.tabset .tabset-fade}
+
+Compare with NLA, Northern Appalachian and New Hampshire.
+
+### Category dot plot
+
+```{r all dots setup, echo=FALSE, warning = FALSE, message = FALSE}
+
+#NLA
+vars<-c("TP_threshold","TN_threshold","CHLA_threshold","d.oxygen","chloride")
+
+nla.analysis <- cat_analysis(
+  dframe=nla.att,
+  vars=vars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+nla.cat <- nla.analysis %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  mutate(Study="NLA",
+         Indicator=case_when(Indicator=="TP_threshold"~"Total phosphorus", 
+                             Indicator=="TN_threshold"~"Total nitrogen", 
+                             Indicator=="CHLA_threshold"~"Total chlorophyll",
+                             Indicator=="d.oxygen"~"Dissolved oxygen",
+                             Indicator=="chloride"~"Chloride"))
+
+#NAP
+nap.analysis <- cat_analysis(
+  dframe=nap.att,
+  vars=vars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+nap.cat <- nap.analysis %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  mutate(Study="NAP",
+         Indicator=case_when(Indicator=="TP_threshold"~"Total phosphorus", 
+                             Indicator=="TN_threshold"~"Total nitrogen", 
+                             Indicator=="CHLA_threshold"~"Total chlorophyll",
+                             Indicator=="d.oxygen"~"Dissolved oxygen",
+                             Indicator=="chloride"~"Chloride"))
+
+#NH
+nh.analysis <- cat_analysis(
+  dframe=nh.att,
+  vars=c("EPA_Chla","EPA_TN","EPA_TP","DO","CHLORIDE_threshold"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXT",
+  xcoord = "LON_DD_N83",
+  ycoord = "LAT_DD_N83")
+
+nh.cat <- nh.analysis %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  mutate(Study="NH",
+         Indicator=case_when(Indicator=="EPA_TP"~"Total phosphorus", 
+                             Indicator=="EPA_TN"~"Total nitrogen", 
+                             Indicator=="EPA_Chla"~"Total chlorophyll",
+                             Indicator=="DO"~"Dissolved oxygen",
+                             Indicator=="CHLORIDE_threshold"~"Chloride"))
+
+```
+
+```{r all dots plot}
+cats <- rbind(ny.cat,nh.cat,nla.cat,nap.cat)
+
+ggplot(cats,aes(x=Category,y=Estimate.P,color=Study))+
+  geom_point(position=position_dodge(width=0.2))+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P, ymax=UCB95Pct.P), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(.~Indicator, scales="free")
+```
+
+### Cumulative distribution function
+
+```{r all cdf setup, echo=FALSE, warning = FALSE, message = FALSE}
+
+##---- NEW HAMPSHIRE ----
+
+nh.att <- nh.att %>% 
+  mutate(TN_UG.L=TN_UG.L/1000) %>% 
+  rename(CHLOROPHYLL_ug_L=CHLOROPHYLL.A.x,
+         NITROGEN_mg_L=TN_UG.L,
+         PHOSPHORUS_ug_L=PHOSPHORUS.ug.L.x,
+         CHLORIDE_mg_L=CHLORIDE)
+
+analysis <- cont_analysis(
+  dframe = nh.att,
+  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
+  subpops = ,
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXT",
+  xcoord = "X_ALBERS",
+  ycoord = "Y_ALBERS")
+
+NH<-analysis$CDF %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NH")
+
+## ---- NORTHERN APPLACHIAN ----
+
+nap.att <- nap.att %>% 
+  rename(CHLOROPHYLL_ug_L=CHLA,
+         NITROGEN_mg_L=TN,
+         PHOSPHORUS_ug_L=TP,
+         CHLORIDE_mg_L=CHLORIDE,
+         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+  
+analysis <- cont_analysis(
+  dframe = nap.att,
+  vars = myvars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+NAP<-analysis$CDF %>% 
+  filter(Subpopulation=="yes") %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NAP")
+
+## ---- NATIONAL ----
+
+nla.att <- nla.att %>% 
+  rename(CHLOROPHYLL_ug_L=CHLA,
+         NITROGEN_mg_L=TN,
+         PHOSPHORUS_ug_L=TP,
+         CHLORIDE_mg_L=CHLORIDE,
+         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+
+analysis <- cont_analysis(
+  dframe = nla.att,
+  vars = myvars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+NLA<-analysis$CDF %>% 
+  filter(Subpopulation=="yes") %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NLA")
+
+## ---- ALL ----
+
+all <- rbind(NY,NH,NAP,NLA) %>%
+  mutate(Indicator=case_when(
+    Indicator=="CHLOROPHYLL_ug_L"~"CHLOROPHYLL (ug/L)",
+    Indicator=="NITROGEN_mg_L" ~ "NITROGEN (mg/L)",
+    Indicator=="PHOSPHORUS_ug_L"~"PHOSPHORUS (ug/L)",
+    Indicator=="CHLORIDE_mg_L"~"CHLORIDE (mg/L)",
+    Indicator=="DISSOLVED_OXYGEN_mg_L"~"DISSOLVED_OXYGEN (mg/L)")) %>% 
+  group_by(Indicator,Study) %>% 
+  ungroup() %>% 
+  filter((Indicator=="CHLOROPHYLL (ug/L)"&Value<50)|
+           (Indicator=="CHLORIDE (mg/L)"&Value<250)|
+           (Indicator=="NITROGEN (mg/L)"&Value<2.5)|
+           (Indicator=="PHOSPHORUS (ug/L)"&Value<150)|
+           Indicator=="DISSOLVED_OXYGEN (mg/L)")
+
+table <- data.frame(Indicator=c("CHLOROPHYLL (ug/L)","DISSOLVED_OXYGEN (mg/L)","NITROGEN (mg/L)","PHOSPHORUS (ug/L)"),
+                    Low=c(4.52,3,0.428,16),
+                    High=c(8.43,5,0.655,27.9))
+```
+
+```{r all cdf plot}
+ggplot(all,aes(x=Value,y=Estimate.P,color=Study,shape=Study))+
+  geom_line()+
+  ylim(0,100)+
+  geom_vline(data=table,aes(xintercept=Low),linetype="dashed")+
+  geom_vline(data=table,aes(xintercept=High),linetype="dashed")+
+  facet_wrap(.~Indicator, scales="free")
 ```
