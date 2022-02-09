@@ -763,7 +763,7 @@ ggplot(cats,aes(x=Category,y=Estimate.P,color=Study))+
 
 ```{r all cdf setup, echo=FALSE, warning = FALSE, message = FALSE}
 
-##---- NEW HAMPSHIRE ----
+##new hampshire
 
 nh.att <- nh.att %>% 
   mutate(TN_UG.L=TN_UG.L/1000) %>% 
@@ -785,7 +785,7 @@ NH<-analysis$CDF %>%
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NH")
 
-## ---- NORTHERN APPLACHIAN ----
+##northern appalachian
 
 nap.att <- nap.att %>% 
   rename(CHLOROPHYLL_ug_L=CHLA,
@@ -808,7 +808,7 @@ NAP<-analysis$CDF %>%
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NAP")
 
-## ---- NATIONAL ----
+##national
 
 nla.att <- nla.att %>% 
   rename(CHLOROPHYLL_ug_L=CHLA,
@@ -831,7 +831,7 @@ NLA<-analysis$CDF %>%
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NLA")
 
-## ---- ALL ----
+##all
 
 all <- rbind(NY,NH,NAP,NLA) %>%
   mutate(Indicator=case_when(
