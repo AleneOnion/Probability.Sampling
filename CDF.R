@@ -112,6 +112,7 @@ all <- rbind(NY,NH,NAP,NLA) %>%
     Indicator=TRUE~Indicator
   )) %>% 
   group_by(Indicator,Study) %>% 
+  slice(!which.max(Value)) %>% 
   ungroup() %>% 
   filter((Indicator=="CHLOROPHYLL (ug/L)"&Value<50)|
            (Indicator=="CHLORIDE (mg/L)"&Value<250)|
