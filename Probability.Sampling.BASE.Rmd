@@ -192,6 +192,10 @@ att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>%
 att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
 att<-att %>% spread(chemical_name,result_value,fill = NA)
 
+att<-att %>% filter((Eval_Status=="Target_Sampled"&!is.na(`CHLOROPHYLL A_OW_TOTAL`)&!is.na(`PHOSPHORUS, TOTAL_OW_TOTAL`)) |
+                      (Eval_Status!="Target_Sampled") |
+                      (LAKE_ID %in% c("0703UWBXXX1","0801KAY0984A","1203MET0821","0602LUD0099","0801GUL0969")))
+
 #creating thresholds
 att<-att %>% 
   # remove fields in the sites table that aren't relevant
@@ -333,7 +337,7 @@ att<-att %>%
          PROB_CAT=="(20,50]"~(616/20),
          PROB_CAT==">50"~(500/33)))
 
-rm(list=setdiff(ls(), c('newdata',"att","sites")))
+# rm(list=setdiff(ls(), c('newdata',"att","sites")))
 
 ```
 
