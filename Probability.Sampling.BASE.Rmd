@@ -865,3 +865,8 @@ ggplot(all,aes(x=Value,y=Estimate.P,color=Study,shape=Study))+
   geom_vline(data=table,aes(xintercept=High),linetype="dashed")+
   facet_wrap(.~Indicator, scales="free")
 ```
+
+## Session info
+```{r}
+sessionInfo(package=NULL)
+```
