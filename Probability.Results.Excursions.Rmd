@@ -14,6 +14,7 @@ library(tidyverse)
 library(huxtable)
 library(ggplot2)
 library(lubridate)
+library(spsurvey)
 ```
 
 
@@ -74,88 +75,16 @@ att<-att %>%
 # should add up to 6437
 print(sum(att$WgtAdj))
 
-# Estimate TNT extent
-library(spsurvey)
-TNTextent <- cat_analysis(
+# Estimate excursions
+cat.extent <- cat_analysis(
   dframe=att,
-  vars=c("statusTNT"),
+  vars=c("ammonia","dissolved_oxygen","nitrite","ph"),
   subpops = ,
   siteID = "siteID",
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
-table <- TNTextent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-# Estimate Target extent reasons
-target.att <- att[att$statusTNT=="Target",]
-TargetExtent <- cat_analysis(
-  dframe=target.att,
-  vars=c("Eval_Status"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-table <- TargetExtent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-# Estimate ammonia excursions
-Ammonia <- cat_analysis(
-  dframe=target.att,
-  vars=c("ammonia"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-table <- Ammonia %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-# Estimate DO excursions
-DO <- cat_analysis(
-  dframe=target.att,
-  vars=c("dissolved_oxygen"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-table <- DO %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-# Estimate nitrite excursions
-nitrite <- cat_analysis(
-  dframe=target.att,
-  vars=c("nitrite"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-table <- nitrite %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
-hux <- as_hux(table)
-number_format(hux) <- 2
-theme_plain(hux)
-
-# Estimate pH excursions
-ph <- cat_analysis(
-  dframe=target.att,
-  vars=c("ph"),
-  subpops = ,
-  siteID = "siteID",
-  weight = "WgtAdj",
-  xcoord = "xcoord",
-  ycoord = "ycoord")
-table <- ph %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
+table <- cat.extent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
 hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
@@ -187,7 +116,7 @@ hux <- as_hux(table)
 number_format(hux) <- 2
 theme_plain(hux)
 
-results <- rbind(Ammonia,DO,nitrite,ph,fully.support) %>% 
+results <- rbind(cat.extent,fully.support) %>% 
   filter(Category!="Total") %>% 
   mutate(Indicator=case_when(
     Indicator=="x" ~ "all parameters",
@@ -206,17 +135,18 @@ results <- rbind(Ammonia,DO,nitrite,ph,fully.support) %>%
 
 results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","all parameters"))
 
+results <- results %>% 
+  mutate(Category=case_when(
+    Category==0 ~ "Non-excursion",
+    Category==1 ~ "Excursion"
+  ))
+
 #side by side plots
-print(ggplot(results,aes(x=Indicator,y=pct,fill=Category)) +
-  geom_bar(stat = "identity") +
-  # geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2,position=position_dodge(width=0.2)) +
-  ylim(0,130)+
-  # facet_grid( ~ Indicator, switch="x") +
-  # theme(panel.spacing = unit(0, "lines"),
-  #       strip.background = element_blank(),
-  #       strip.placement = "outside",
-  #       axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
-  #       legend.position = "none") +
+print(ggplot(results,aes(x=Category,y=pct)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2) +
+  ylim(0,100)+
+  facet_grid( ~ Indicator, switch="x", scales="free") +
   labs(y="Percent of total",x="Parameter",title="NYS Ponded Waters Supporting Fishing Use"))
 
 ```

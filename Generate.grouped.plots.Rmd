@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = FALSE) 
 ```
 
-```{r setup}
+```{r data}
 
 library(tidyverse)
 library(huxtable)
@@ -318,7 +318,7 @@ att<-att %>%
          PROB_CAT=="(20,50]"~(616/20),
          PROB_CAT==">50"~(500/33)))
 
-# rm(list=setdiff(ls(), c('newdata',"att","sites")))
+rm(list=setdiff(ls(), c('newdata',"att","sites")))
 
 ```
 
@@ -328,12 +328,12 @@ att<-att %>%
 ```{r cat analysis}
 
 #list variables you are interested in and defined above
-trophic <- c("")
-minerals <- c("")
-in.situ <- c("")
-habs <- c("")
+trophic <- c("phos_trophic","chla_trophic","d.oxygen","N_LIMIT","secchi","leech","color")
+minerals <- c("zebra","chloride","alkalinity")
+in.situ <- c("ph","conductance")
+habs <- c("microcystin","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
 
-vars.list <- c(trophic,minerals,in.situ,habs)
+vars.list <- list(trophic,minerals,in.situ,habs)
 
 #analysis
 for(i in vars.list){
@@ -382,13 +382,15 @@ table <- CatExtent %>%
            Indicator=TRUE~Indicator)
          )
 
-ggplot(table,aes(x=Category,y=Estimate.P)) +
+plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
   geom_point()+
   geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
   theme(legend.position = "none")+
   facet_wrap(.~Indicator,scales = "free")+
   ylim(0,100)+
-  labs(title="Condition estimates across NYS Ponded Waters",y="Percent of Total",x="Condition category")
+  labs(y="Percent of Total",x="Condition category")
+
+print(plot)
 
 }
 
