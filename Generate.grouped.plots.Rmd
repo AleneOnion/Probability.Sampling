@@ -2,6 +2,8 @@
 title: "Probability Sampling Plots"
 author: "Sabrina Xie"
 date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
+fig_width: 15
+fig_height: 10
 output:
   html_document:
     toc: true
@@ -328,67 +330,158 @@ rm(list=setdiff(ls(), c('newdata',"att","sites")))
 ```{r cat analysis}
 
 #list variables you are interested in and defined above
-trophic <- c("phos_trophic","chla_trophic","d.oxygen","N_LIMIT","secchi","leech","color")
-minerals <- c("zebra","chloride","alkalinity")
+trophic <- c("phos_trophic","chla_trophic","N_LIMIT","secchi","leech","color")
+minerals <- c("zebra","alkalinity")
+salt <- c("chloride")
 in.situ <- c("ph","conductance")
 habs <- c("microcystin","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
 
-vars.list <- list(trophic,minerals,in.situ,habs)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,HABs=habs)
+
+n<-0
 
 #analysis
 for(i in vars.list){
-CatExtent <- cat_analysis(
-  dframe=att,
-  vars=i, 
-  subpops = , #for example could separate by area category or year
-  siteID = "siteID",
-  weight = "WgtAdj", #name will probably change in future
-  xcoord = "xcoord",
-  ycoord = "ycoord")
+  
+  n<-n+1
+  
+  CatExtent <- cat_analysis(
+    dframe=att,
+    vars=i, 
+    subpops = , #for example could separate by area category or year
+    siteID = "siteID",
+    weight = "WgtAdj", #name will probably change in future
+    xcoord = "xcoord",
+    ycoord = "ycoord")
+  
+  table <- CatExtent %>% 
+    select(Indicator,
+           Category,
+           Estimate.P,
+           LCB95Pct.P,
+           UCB95Pct.P) %>% 
+    filter(Category!="Total") %>% 
+    mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
+                                              "Blue","Green","Brown","Murky",
+                                              "High","Weak","Uncolored",
+                                              "Medium","Low",
+                                              "Acidic","~Neutral","Slightly alk","Highly alk",
+                                              "Soft","Moderately hard","Average","Hard","Very hard",
+                                              "Highly susceptible","May be susceptible","Not susceptible",
+                                              "Eutrophic","Mesotrophic","Oligotrophic",
+                                              "N-limited","Co-limited","P-limited",
+                                              "Non-detect","Microcystin detected","Most disturbed")),
+           Indicator=case_when(
+             Indicator=="phos_trophic"~"Phosphorus", 
+             Indicator=="chla_trophic"~"Chlorophyll-a", 
+             Indicator=="TP_threshold"~"Total phosphorus", 
+             Indicator=="TN_threshold"~"Total nitrogen", 
+             Indicator=="CHLA_threshold"~"Total chlorophyll", 
+             Indicator=="microcystin"~"Microcystin",
+             Indicator=="d.oxygen"~"Dissolved oxygen",
+             Indicator=="N_LIMIT"~"Nutrient limitation", 
+             Indicator=="secchi"~"Secchi", 
+             Indicator=="zebra"~"Zebra mussel susceptibility", 
+             Indicator=="conductance"~"Hardness", 
+             Indicator=="color"~"Color", 
+             Indicator=="ph"~"pH", 
+             Indicator=="leech"~"Nutrient-color status", 
+             Indicator=="chloride"~"Chloride",
+             Indicator=='alkalinity'~"Alkalinity",
+             Indicator=="chlorophyte"~"% Chlorophyte",
+             Indicator=="cryptophyta"~"% Cryptophyta",
+             Indicator=="cyanobacteria"~"% Cyanobacteria",
+             Indicator=="dinophyta"~"% Dinophyta",
+             Indicator=TRUE~Indicator)
+    )
+  
+  plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
+    geom_point()+
+    geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+    theme(legend.position = "none")+
+    facet_wrap(.~Indicator,scales = "free")+
+    ylim(0,100)+
+    # scale_x_discrete(guide = guide_axis(n.dodge = 2))+
+    labs(y="Percent of Total",x="Condition category",title=paste(names(vars.list)[n],"Parameters"))
+  
+  print(plot)
+  
+}
 
-table <- CatExtent %>% 
-  select(Indicator,
-         Category,
-         Estimate.P,
-         LCB95Pct.P,
-         UCB95Pct.P) %>% 
-  filter(Category!="Total") %>% 
-  mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
-                                            "Blue","Green","Brown","Murky",
-                                            "High","Weak","Uncolored",
-                                            "Medium","Low",
-                                            "Acidic","~Neutral","Slightly alk","Highly alk",
-                                            "Soft","Moderately hard","Average","Hard","Very hard",
-                                            "Highly susceptible","May be susceptible","Not susceptible",
-                                            "Eutrophic","Mesotrophic","Oligotrophic",
-                                            "N-limited","Co-limited","P-limited",
-                                            "Non-detect","Microcystin detected","Most disturbed")),
-         Indicator=case_when(
-           Indicator=="phos_trophic"~"Phosphorus", 
-           Indicator=="chla_trophic"~"Chlorophyll-a", 
-           Indicator=="TP_threshold"~"Total phosphorus", 
-           Indicator=="TN_threshold"~"Total nitrogen", 
-           Indicator=="CHLA_threshold"~"Total chlorophyll", 
-           Indicator=="microcystin"~"Microcystin",
-           Indicator=="d.oxygen"~"Dissolved oxygen",
-           Indicator=="N_LIMIT"~"Nutrient limitation", 
-           Indicator=="secchi"~"Secchi", 
-           Indicator=="zebra"~"Zebra mussel susceptibility", 
-           Indicator=="conductance"~"Hardness", 
-           Indicator=="color"~"Color", 
-           Indicator=="ph"~"pH", 
-           Indicator=="leech"~"Nutrient-color status", 
-           Indicator=="chloride"~"Chloride",
-           Indicator=TRUE~Indicator)
-         )
+```
 
-plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
-  geom_point()+
-  geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
-  theme(legend.position = "none")+
-  facet_wrap(.~Indicator,scales = "free")+
-  ylim(0,100)+
-  labs(y="Percent of Total",x="Condition category")
+# 2. Continuous
+
+``` {r cont analysis}
+
+att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
+                      "NITROGEN_mg_L"=`NITROGEN, TOTAL_OW_TOTAL`,
+                      "PHOSPHORUS_mg_L"=`PHOSPHORUS, TOTAL_OW_TOTAL`,
+                      "DISSOLVED_OXYGEN_mg_L"=`DISSOLVED OXYGEN_epi`,
+                      "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
+                      "CHLORIDE_mg_L"=CHLORIDE_OW_TOTAL,
+                      "CALCIUM_mg_L"=CALCIUM_OW_TOTAL,
+                      "SECCHI_m"=`DEPTH, SECCHI DISK DEPTH_SD_NA`,
+                      "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
+                      "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`
+                      )
+
+#list variables you are interested in and defined above
+trophic <- c("CHLOROPHYLL_ug_L",
+             "NITROGEN_mg_L",
+             "PHOSPHORUS_mg_L",
+             "SECCHI_m",
+             "TRUE_COLOR")
+minerals <- c("CALCIUM_mg_L","ALKALINITY_mg_L")
+salt <- c("CHLORIDE_mg_L")
+in.situ <- c("DISSOLVED_OXYGEN_mg_L",
+             "PH_epi",
+             "SPEC_CONDUCTANCE")
+
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ)
+
+n<-0
+
+for(i in vars.list){
+  
+  n<-n+1
+  
+  #Creates 3 estimations in list: CDF, percentiles, means.
+  analysis <- cont_analysis(
+    dframe = att,
+    vars = i,
+    subpops = ,
+    siteID = "siteID",
+    weight = "WgtAdj",
+    xcoord = "xcoord",
+    ycoord = "ycoord")
+  
+  table<-analysis$CDF %>% 
+    select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+    filter(Indicator %in% i) %>% 
+    mutate(Indicator=case_when(
+      Indicator=="CHLOROPHYLL_ug_L"~"Chlorophyll-a (ug/L)",
+      Indicator=="NITROGEN_mg_L"~"Total nitrogen (mg/L)",
+      Indicator=="PHOSPHORUS_mg_L"~"Total phosphorus (mg/L)",
+      Indicator=="DISSOLVED_OXYGEN_mg_L"~"Epilimnetic dissolved oxygen (mg/L)",
+      Indicator=="ALKALINITY_mg_L"~"Alkalinity (mg/L)",
+      Indicator=="CHLORIDE_mg_L"~"Chloride (mg/L)",
+      Indicator=="CALCIUM_mg_L"~"Calcium (mg/L)",
+      Indicator=="SECCHI_m"~"Secchi disk depth (m)",
+      Indicator=="TRUE_COLOR"~"True color (PCU)",
+      Indicator=="SPEC_CONDUCTANCE"~"Specific conductance (mS/cm)",
+      Indicator=="PH_epi"~"pH (SU)",
+      Indicator=TRUE~Indicator
+    ))
+  
+  plot<-ggplot(table,aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+
+    geom_line()+
+    geom_point()+
+    geom_ribbon(alpha=0.5)+
+    ylim(0,100)+
+    facet_wrap(.~Indicator, scales="free")+
+    guides(fill="none",shape="none")+
+    labs(y="Percent of lakes",title=paste(names(vars.list[n]),"Parameters"))
 
 print(plot)
 
