@@ -15,13 +15,19 @@ knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(warning = FALSE, message = FALSE, echo = FALSE) 
 ```
 
-```{r data}
+```{r}
 
 library(tidyverse)
 library(huxtable)
 library(ggplot2)
 library(lubridate)
+library(egg)
+library(gridExtra)
 library(spsurvey) #This code was written for spsurvey v5.0.0
+
+```
+
+```{r}
 
 # retrieve raw data from database
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Current")
@@ -68,7 +74,13 @@ lab<-newdata %>%
                          "CHLOROPHYLL A (PROBE) CONCENTRATION, CYANOBACTERIA (BLUEGREEN)_OW_NA",
                          "CHLOROPHYLL A (PROBE) CONCENTRATION, DINOPHYTA (DIATOMS)_OW_NA",
                          "CHLOROPHYLL A (PROBE) CONCENTRATION, TOTAL_OW_NA",
-                         "ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL")) %>%
+                         "ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL",
+                         "ARSENIC_BS_TOTAL",
+                         "ARSENIC_OW_TOTAL",
+                         "IRON_BS_TOTAL",
+                         "IRON_OW_TOTAL",
+                         "MAGNESIUM_BS_TOTAL",
+                         "MAGNESIUM_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -258,12 +270,6 @@ att<-att %>%
     `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Brown",
     `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Murky"
   )) %>% 
-  #chloride
-  mutate(chloride=case_when(
-    `CHLORIDE_OW_TOTAL` <= 35 ~ "Low",
-    between(`CHLORIDE_OW_TOTAL`,35,250) ~ "Medium",
-    `CHLORIDE_OW_TOTAL` >= 250 ~ "High",
-    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low")) %>% 
   #chlorophyll
   rename(CHLOROPHYTE=`CHLOROPHYLL A (PROBE) CONCENTRATION, CHLOROPHYTE (GREEN ALGAE)_OW_NA`,
          CRYPTOPHYTA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CRYPTOPHYTA (CRYPTOPHYTES)_OW_NA`,
@@ -321,22 +327,20 @@ att<-att %>%
          PROB_CAT==">50"~(500/33)))
 
 rm(list=setdiff(ls(), c('newdata',"att","sites")))
-
 ```
 
 
 # 1. Categorical
 
-```{r cat analysis}
+```{r cat analysis, fig.dim = c(8,8)}
 
 #list variables you are interested in and defined above
 trophic <- c("phos_trophic","chla_trophic","N_LIMIT","secchi","leech","color")
 minerals <- c("zebra","alkalinity")
-salt <- c("chloride")
 in.situ <- c("ph","conductance")
 habs <- c("microcystin","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,HABs=habs)
+vars.list <- list(Trophic=trophic,Minerals=minerals,`In Situ`=in.situ,HABs=habs)
 
 n<-0
 
@@ -382,11 +386,10 @@ for(i in vars.list){
              Indicator=="N_LIMIT"~"Nutrient limitation", 
              Indicator=="secchi"~"Secchi", 
              Indicator=="zebra"~"Zebra mussel susceptibility", 
-             Indicator=="conductance"~"Hardness", 
+             Indicator=="conductance"~"Conductance", 
              Indicator=="color"~"Color", 
              Indicator=="ph"~"pH", 
              Indicator=="leech"~"Nutrient-color status", 
-             Indicator=="chloride"~"Chloride",
              Indicator=='alkalinity'~"Alkalinity",
              Indicator=="chlorophyte"~"% Chlorophyte",
              Indicator=="cryptophyta"~"% Cryptophyta",
@@ -396,15 +399,18 @@ for(i in vars.list){
     )
   
   plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
-    geom_point()+
+    geom_col()+
     geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
     theme(legend.position = "none")+
     facet_wrap(.~Indicator,scales = "free")+
     ylim(0,100)+
     # scale_x_discrete(guide = guide_axis(n.dodge = 2))+
-    labs(y="Percent of Total",x="Condition category",title=paste(names(vars.list)[n],"Parameters"))
+    labs(y="Percent of Total",x="Condition category",title=paste(names(vars.list)[n],"Parameters"))+
+    theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
   
-  print(plot)
+  plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+  
+  gridExtra::grid.arrange(plot)
   
 }
 
@@ -412,10 +418,10 @@ for(i in vars.list){
 
 # 2. Continuous
 
-``` {r cont analysis}
+``` {r cont analysis, fig.dim = c(8,8)}
 
 att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
-                      "NITROGEN_mg_L"=`NITROGEN, TOTAL_OW_TOTAL`,
+                      "NITROGEN_mg_L"=`NITROGEN, TOTAL`,
                       "PHOSPHORUS_mg_L"=`PHOSPHORUS, TOTAL_OW_TOTAL`,
                       "DISSOLVED_OXYGEN_mg_L"=`DISSOLVED OXYGEN_epi`,
                       "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
@@ -425,6 +431,33 @@ att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
                       "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
                       "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`
                       )
+
+vars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","DISSOLVED_OXYGEN_mg_L","CHLORIDE_mg_L","CALCIUM_mg_L","ALKALINITY_mg_L")
+
+#Creates 3 estimations in list: CDF, percentiles, means.
+analysis <- cont_analysis(
+  dframe = att,
+  vars = vars,
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L")
+
+NY<-analysis$CDF %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NY") %>% 
+  mutate(Value=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~as.numeric(Value)*1000,
+    Indicator=TRUE~as.numeric(Value)
+  )) %>% 
+  mutate(Indicator=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~"PHOSPHORUS_ug_L",
+    Indicator=TRUE~Indicator
+  )) %>% 
+ filter(Indicator %in% c(myvars))
 
 #list variables you are interested in and defined above
 trophic <- c("CHLOROPHYLL_ug_L",
@@ -437,8 +470,14 @@ salt <- c("CHLORIDE_mg_L")
 in.situ <- c("DISSOLVED_OXYGEN_mg_L",
              "PH_epi",
              "SPEC_CONDUCTANCE")
+metals <- c("ARSENIC_BS_TOTAL",
+            "ARSENIC_OW_TOTAL",
+            "IRON_BS_TOTAL",
+            "IRON_OW_TOTAL",
+            "MAGNESIUM_BS_TOTAL",
+            "MAGNESIUM_OW_TOTAL")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals)
 
 n<-0
 
@@ -463,28 +502,57 @@ for(i in vars.list){
       Indicator=="CHLOROPHYLL_ug_L"~"Chlorophyll-a (ug/L)",
       Indicator=="NITROGEN_mg_L"~"Total nitrogen (mg/L)",
       Indicator=="PHOSPHORUS_mg_L"~"Total phosphorus (mg/L)",
-      Indicator=="DISSOLVED_OXYGEN_mg_L"~"Epilimnetic dissolved oxygen (mg/L)",
+      Indicator=="DISSOLVED_OXYGEN_mg_L"~"Dissolved oxygen (mg/L)",
       Indicator=="ALKALINITY_mg_L"~"Alkalinity (mg/L)",
       Indicator=="CHLORIDE_mg_L"~"Chloride (mg/L)",
       Indicator=="CALCIUM_mg_L"~"Calcium (mg/L)",
       Indicator=="SECCHI_m"~"Secchi disk depth (m)",
       Indicator=="TRUE_COLOR"~"True color (PCU)",
-      Indicator=="SPEC_CONDUCTANCE"~"Specific conductance (mS/cm)",
+      Indicator=="SPEC_CONDUCTANCE"~"Conductance (mS/cm)",
       Indicator=="PH_epi"~"pH (SU)",
+      Indicator=="ARSENIC_BS_TOTAL"~"Arsenic, bottom (ug/L)",
+      Indicator=="ARSENIC_OW_TOTAL"~"Arsenic, open water (ug/L)",
+      Indicator=="IRON_BS_TOTAL"~"Iron, bottom (ug/L)",
+      Indicator=="IRON_OW_TOTAL"~"Iron, open water (ug/L)",
+      Indicator=="MAGNESIUM_BS_TOTAL"~"Magnesium, bottom (ug/L)",
+      Indicator=="MAGNESIUM_OW_TOTAL"~"Magnesium, open water (ug/L)",
       Indicator=TRUE~Indicator
-    ))
+    )) %>% 
+    mutate(Lower=case_when(
+      Indicator=="Chlorophyll-a (ug/L)"~2,
+      Indicator=="Total phosphorus (mg/L)"~0.01,
+      Indicator=="Specific conductance (mS/cm)"~125,
+      Indicator=="Alkalinity (mg/L)"~60,
+      Indicator=="Calcium (mg/L)"~10,
+      Indicator=="True color (PCU)"~10,
+      Indicator=="Secchi disk depth (m)"~2,
+      Indicator=TRUE~-5)) %>% 
+    mutate(Upper=case_when(
+      Indicator=="Chlorophyll-a (ug/L)"~8,
+      Indicator=="Total phosphorus (mg/L)"~0.02,
+      Indicator=="Specific conductance (mS/cm)"~250,
+      Indicator=="Alkalinity (mg/L)"~120,
+      Indicator=="Calcium (mg/L)"~20,
+      Indicator=="True color (PCU)"~20,
+      Indicator=="Secchi disk depth (m)"~5,
+      Indicator=TRUE~-5))
   
   plot<-ggplot(table,aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+
     geom_line()+
     geom_point()+
     geom_ribbon(alpha=0.5)+
     ylim(0,100)+
-    facet_wrap(.~Indicator, scales="free")+
+    scale_x_continuous(limits = c(0, NA))+
     guides(fill="none",shape="none")+
+    facet_wrap(.~Indicator, scales="free")+
+    geom_vline(aes(xintercept=Lower),linetype="dashed")+
+    geom_vline(aes(xintercept=Upper),linetype="dashed")+
     labs(y="Percent of lakes",title=paste(names(vars.list[n]),"Parameters"))
 
-print(plot)
-
+  plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+  
+  gridExtra::grid.arrange(plot)
+  
 }
 
 ```
