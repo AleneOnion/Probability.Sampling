@@ -1,5 +1,5 @@
 ---
-title: "Probability.Results.BASE"
+title: "Probability Results"
 author: "Sabrina Xie"
 date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
 output:
@@ -7,6 +7,8 @@ output:
     toc: true
     toc_float: 
       collapsed: false
+    toc_depth: 4
+    theme: lumen
 ---
 
 ```{r setup, include=FALSE}
@@ -16,6 +18,8 @@ ggplot2::theme_set(egg::theme_article())
 ```
 
 # Probability analysis
+
+This markdown uses the `spsurvey` package developed by Michael Dumelle, Tom Kincaid, Tony Olsen, and Marc Weber at EPA to analyze the results of New York's spatially-balanced probability-based survey in 2020-2021. The results include categorical condition extent estimates for statewide conditions, cumulative distribution functions for water quality parameters, and comparisons to the National Lakes Assessment (nationally and regionally), New Hampshire and to New York's historical data (LMAS samples since 2010). 
 
 ## Load packages
 
@@ -35,7 +39,7 @@ library(spsurvey) #This code was written for spsurvey v5.0.0
 
 ## Load data
 
-To run cat_analysis(), the dataframe will need to include columns for the categorical variable you are interested in, weight for each site, xcoordinate and ycoordinate. Optionally, you can also include a subpopulation or stratum column to separate results and site IDs for two-stage analysis (for example, if there are repeated sites).
+To run `cat_analysis()`, the dataframe will need to include columns for the categorical variable you are interested in, weight for each site, xcoordinate and ycoordinate. Optionally, you can also include a subpopulation or stratum column to separate results and site IDs for two-stage analysis (for example, if there are repeated sites).
 
 In this script, weight is adjusted because of the proportional design. In the future, this can be excluded as the design should include weights already.
 
@@ -97,7 +101,9 @@ lab<-newdata %>%
                          "IRON_BS_TOTAL",
                          "IRON_OW_TOTAL",
                          "MAGNESIUM_BS_TOTAL",
-                         "MAGNESIUM_OW_TOTAL")) %>%
+                         "MAGNESIUM_OW_TOTAL",
+                         "CARBON, DISSOLVED ORGANIC (DOC)_OW_DISSOLVED",
+                         "NITROGEN, AMMONIA (AS N)_OW_TOTAL")) %>%
   select(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_RESULT_VALUE,RSLT_PROFILE_DEPTH) %>%
   distinct(LAKE_HISTORY_ID,SAMPLE_DATE,combined,RSLT_PROFILE_DEPTH,.keep_all = TRUE) %>%
   rename(LAKE_ID=LAKE_HISTORY_ID,
@@ -363,7 +369,7 @@ setwd("~/OneDrive - New York State Office of Information Technology Services/Rsc
 chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
 
 chem <- chem %>% 
-  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE"),
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE","MAGNESIUM","DOC","COND","AMMONIA_N","CALCIUM","PH"),
          NARS_FLAG == "") %>% 
   select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
@@ -392,12 +398,7 @@ oxygen <- oxygen %>%
   distinct()
 
 att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
-att.nla$CHLA <- as.numeric(att.nla$CHLA)
-att.nla$TN <- as.numeric(att.nla$TN)
-att.nla$TP <- as.numeric(att.nla$TP)
-att.nla$CHLORIDE <- as.numeric(att.nla$CHLORIDE)
-att.nla$OXYGEN <- as.numeric(att.nla$OXYGEN)
-att.nla$COLOR <- as.numeric(att.nla$COLOR)
+att.nla[,4:16] <- lapply(att.nla[,4:16],as.numeric)
 att.nla$DINTP <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000)
 
 # selecting parameters and adding trophic status
@@ -495,9 +496,9 @@ nh.att <- merge(nh.att,chem,by.x="SITE_ID",by.y="NLA.ID",all.x=T) %>%
 
 ## Categorical Variable Analysis
 
-Here I perform the analysis using cat_analysis(). The relevant categorical variable / threshold should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe.
+Here I perform the analysis using `cat_analysis()`. The relevant categorical variable / threshold should be input as the `vars` argument. `vars` can be a list of all categories you are interested in, which would create a very big dataframe.
 
-In the future, the "weight" argument should be part of the site design and might not be called "WgtAdj".
+In the future, the `weight` argument should be part of the site design and might not be called `WgtAdj`.
 
 ```{r cat analysis}
 
@@ -562,9 +563,9 @@ probability.cat <- table %>% filter(Indicator %in% c("Phosphorus","Chlorophyll-a
 
 ## Continuous Variable Analysis
 
-Here I perform the analysis using cont_analysis(). The relevant CONTINUOUS variable should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe with all. The output of this function is a list with 3 estimations: cumulative distribution function (CDF), percentiles, and means.
+Here I perform the analysis using `cont_analysis()`. The relevant CONTINUOUS variable should be input as the `vars` argument. `vars` can be a list of all categories you are interested in, which would create a very big dataframe with all. The output of this function is a list with 3 estimations: cumulative distribution function (CDF), percentiles, and means.
 
-As above, in the future the "weight" argument should be part of the site design and might not be called "WgtAdj".
+As above, in the future the `weight` argument should be part of the site design and might not be called `WgtAdj`.
 
 ```{r cont analysis}
 
@@ -576,25 +577,29 @@ att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
                       "DISSOLVED_OXYGEN_mg_L"=`DISSOLVED OXYGEN_epi`,
                       "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
                       "CHLORIDE_mg_L"=CHLORIDE_OW_TOTAL,
-                      "CALCIUM_mg_L"=CALCIUM_OW_TOTAL)
+                      "CALCIUM_mg_L"=CALCIUM_OW_TOTAL,
+                      "DOC_mg_L"=`CARBON, DISSOLVED ORGANIC (DOC)_OW_DISSOLVED`,
+                      "SECCHI_m"=`DEPTH, SECCHI DISK DEPTH_SD_NA`,
+                      "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
+                      "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`,
+                      "AMMONIA_N"=`NITROGEN, AMMONIA (AS N)_OW_TOTAL`)
 
-vars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","DISSOLVED_OXYGEN_mg_L","CHLORIDE_mg_L","CALCIUM_mg_L","ALKALINITY_mg_L")
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L","DOC_mg_L","CALCIUM_mg_L","SECCHI_m","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL")
 
 #Creates 3 estimations in list: CDF, percentiles, means.
 analysis <- cont_analysis(
   dframe = att,
-  vars = vars,
+  vars = myvars,
   subpops = ,
   siteID = "siteID",
   weight = "WgtAdj",
   xcoord = "xcoord",
   ycoord = "ycoord")
 
-myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L")
-
 NY<-analysis$CDF %>% 
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NY") %>% 
+  filter(Indicator != "SECCHI_m") %>% 
   mutate(Value=case_when(
     Indicator=="PHOSPHORUS_mg_L"~as.numeric(Value)*1000,
     Indicator=TRUE~as.numeric(Value)
@@ -602,15 +607,14 @@ NY<-analysis$CDF %>%
   mutate(Indicator=case_when(
     Indicator=="PHOSPHORUS_mg_L"~"PHOSPHORUS_ug_L",
     Indicator=TRUE~Indicator
-  )) %>% 
-  filter(Indicator %in% c(myvars))
+  ))
 
 str(analysis)
 
 ```
 
 
-## Plots {.tabset .tabset-fade}
+## Plots
 
 Here I have plotted the analyses from above. The categorical variables are plotted as dots, maps and bars; the continuous variables are plotted as a distribution function. They are also grouped by QAPP parameter categories in the "Grouped plots" tab. 
 
@@ -639,7 +643,7 @@ gridExtra::grid.arrange(plot)
 ```{r cdf, fig.height=10, fig.width=10}
 
 #To plot a cumulative distribution function:
-ggplot(analysis$CDF,aes(x=Value,y=Estimate.P,fill=Indicator,shape=Indicator,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+
+ggplot(analysis$CDF,aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+
   geom_line()+
   geom_point()+
   geom_ribbon(alpha=0.5)+
@@ -671,7 +675,7 @@ ggplot() +
 
 ```
 
-### Grouped plots {.tabset}
+### Grouped plots
 
 #### Categorical
 
@@ -762,10 +766,6 @@ for(i in vars.list){
 #### Continuous
 
 ``` {r cont group, fig.dim = c(6,5)}
-
-att <- att %>% rename("SECCHI_m"=`DEPTH, SECCHI DISK DEPTH_SD_NA`,
-                      "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
-                      "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`)
 
 #list variables you are interested in and defined above
 trophic <- c("CHLOROPHYLL_ug_L",
@@ -865,9 +865,11 @@ for(i in vars.list){
 
 ```
 
-## Comparisons {.tabset .tabset-fade}
+## Comparisons
 
-Here I make the comparisons to NLA and NH data from above, as well as to historical LMAS sampling. The values for LMAS sampling are derived from a separate script that counts the number of lakes in each size class from samples in the last 10 years.
+Here I make the comparisons to NLA and NH data from above, as well as to historical LMAS sampling. Thresholds for NLA, NH and NY comparisons are from the NLA and are "good", "fair", and "poor" for chlorophyll-a, phosphorus, nitrogen and epilimnetic dissolved oxygen. There are no thresholds for chloride.
+
+The values for LMAS sampling are derived from a separate script that counts the number of lakes in each size class from samples in the last 10 years.
 
 ### Category dot plot
 
@@ -959,7 +961,8 @@ plot <- ggplot(cats,aes(x=Category,y=Estimate.P,color=Study,shape=Study))+
   geom_point(position=position_dodge(width=0.2))+
   ylim(0,100)+
   geom_errorbar(aes(ymin=LCB95Pct.P, ymax=UCB95Pct.P), width=.25, position=position_dodge(width=0.2))+
-  facet_wrap(.~Indicator, scales="free")
+  facet_wrap(.~Indicator, scales="free")+
+  labs(title="Condition category extent estimates")
 
 plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
 
@@ -995,12 +998,19 @@ NH<-analysis$CDF %>%
 
 ##northern appalachian
 
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L","DOC_mg_L","CALCIUM_mg_L","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL")
+
 nap.att <- nap.att %>% 
   rename(CHLOROPHYLL_ug_L=CHLA,
          NITROGEN_mg_L=TN,
          PHOSPHORUS_ug_L=TP,
          CHLORIDE_mg_L=CHLORIDE,
-         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+         DISSOLVED_OXYGEN_mg_L=OXYGEN,
+         DOC_mg_L=DOC,
+         CALCIUM_mg_L=CALCIUM,
+         TRUE_COLOR=COLOR,
+         SPEC_CONDUCTANCE=COND,
+         MAGNESIUM_OW_TOTAL=MAGNESIUM)
 
 analysis <- cont_analysis(
   dframe = nap.att,
@@ -1009,12 +1019,17 @@ analysis <- cont_analysis(
   siteID = "SITE_ID",
   weight = "WGT_TP_EXTENT",
   xcoord = "XCOORD",
-  ycoord = "YCOORD")
+  ycoord = "YCOORD",
+  statistics = c("CDF"))
 
 NAP<-analysis$CDF %>% 
   filter(Subpopulation=="yes") %>% 
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NAP")
+  mutate(Study="NAP") %>% 
+  mutate(Value=case_when(
+    Indicator=="MAGNESIUM_OW_TOTAL"~Value*1000,
+    Indicator=TRUE~Value
+  ))
 
 ##national
 
@@ -1023,7 +1038,12 @@ nla.att <- nla.att %>%
          NITROGEN_mg_L=TN,
          PHOSPHORUS_ug_L=TP,
          CHLORIDE_mg_L=CHLORIDE,
-         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+         DISSOLVED_OXYGEN_mg_L=OXYGEN,
+         DOC_mg_L=DOC,
+         CALCIUM_mg_L=CALCIUM,
+         TRUE_COLOR=COLOR,
+         SPEC_CONDUCTANCE=COND,
+         MAGNESIUM_OW_TOTAL=MAGNESIUM)
 
 analysis <- cont_analysis(
   dframe = nla.att,
@@ -1032,12 +1052,17 @@ analysis <- cont_analysis(
   siteID = "SITE_ID",
   weight = "WGT_TP_EXTENT",
   xcoord = "XCOORD",
-  ycoord = "YCOORD")
+  ycoord = "YCOORD",
+  statistics = c("CDF"))
 
 NLA<-analysis$CDF %>% 
   filter(Subpopulation=="yes") %>% 
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NLA")
+  mutate(Study="NLA") %>% 
+  mutate(Value=case_when(
+    Indicator=="MAGNESIUM_OW_TOTAL"~Value*1000,
+    Indicator=TRUE~Value
+  ))
 
 ##all
 
@@ -1047,28 +1072,39 @@ all <- rbind(NY,NH,NAP,NLA) %>%
     Indicator=="NITROGEN_mg_L" ~ "Total nitrogen (mg/L)",
     Indicator=="PHOSPHORUS_ug_L"~"Total phosphorus (ug/L)",
     Indicator=="CHLORIDE_mg_L"~"Chloride (mg/L)",
-    Indicator=="DISSOLVED_OXYGEN_mg_L"~"Dissolved oxygen (mg/L)")) %>% 
+    Indicator=="DISSOLVED_OXYGEN_mg_L"~"Dissolved oxygen (mg/L)*",
+    Indicator=="DOC_mg_L"~"Dissolved organic carbon (mg/L)*",
+    Indicator=="CALCIUM_mg_L"~"Calcium (mg/L)*",
+    Indicator=="TRUE_COLOR"~"Color (PCU)*",
+    Indicator=="SPEC_CONDUCTANCE"~"Conductance (mS/cm)*",
+    Indicator=="MAGNESIUM_OW_TOTAL"~"Magnesium (ug/L)*")) %>% 
   group_by(Indicator,Study) %>% 
   ungroup() %>% 
   filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)|
            (Indicator=="Chloride (mg/L)"&Value<250)|
            (Indicator=="Total nitrogen (mg/L)"&Value<2.5)|
            (Indicator=="Total phosphorus (ug/L)"&Value<150)|
-           Indicator=="Dissolved oxygen (mg/L)")
+           Indicator=="Dissolved oxygen (mg/L)*"|
+           (Indicator=="Dissolved organic carbon (mg/L)*"&Value<50)|
+           (Indicator=="Calcium (mg/L)*"&Value<50)|
+           Indicator=="Color (PCU)*"|
+           (Indicator=="Conductance (mS/cm)*" & Value<1000)|
+           (Indicator=="Magnesium (ug/L)*"&Value<25000))
 
-table <- data.frame(Indicator=c("Chlorophyll-a (ug/L)","Dissolved oxygen (mg/L)","Total nitrogen (mg/L)","Total phosphorus (ug/L)"),
+table <- data.frame(Indicator=c("Chlorophyll-a (ug/L)","Dissolved oxygen (mg/L)*","Total nitrogen (mg/L)","Total phosphorus (ug/L)"),
                     Low=c(4.52,3,0.428,16),
                     High=c(8.43,5,0.655,27.9))
 ```
 
-```{r all cdf plot}
+```{r all cdf plot, fig.dim=c(9,7)}
 plot <- ggplot(all,aes(x=Value,y=Estimate.P,color=Study,shape=Study,linetype=Study))+
   geom_line()+
   ylim(0,100)+
   geom_vline(data=table,aes(xintercept=Low),linetype="dashed")+
   geom_vline(data=table,aes(xintercept=High),linetype="dashed")+
   scale_linetype_manual(values=c("solid","dotdash", "dotted","dashed"))+
-  facet_wrap(.~Indicator, scales="free")
+  facet_wrap(.~Indicator, scales="free")+
+  labs(title="Cumulative distribution functions", subtitle="Asterisk (*) denotes parameters for which New Hampshire is not included, extreme values are truncated",y="Percent of total")
 
 plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
 
@@ -1092,41 +1128,15 @@ frame<-att %>%
     endsWith(size_category, "(4,10]") ~ ((2490/6437)*100),
     endsWith(size_category, "(10,20]") ~ ((1003/6437)*100),
     endsWith(size_category, "(20,50]") ~ ((616/6437)*100),
-    endsWith(size_category, ">50") ~ ((500/6437)*100))
-  ) %>%
+    endsWith(size_category, ">50") ~ ((500/6437)*100))) %>%
   mutate(LMAS_Sites = case_when(
     endsWith(size_category, "(1,4]") ~ (7.64),
     endsWith(size_category, "(4,10]") ~ (16.7),
     endsWith(size_category, "(10,20]") ~ (16.2),
     endsWith(size_category, "(20,50]") ~ (19.3),
-    endsWith(size_category, ">50") ~ (40.1)
-  )) %>%
-  mutate(Target_Sampled = case_when( #lakes sampled
-    endsWith(size_category, "(1,4]") ~ (7/62*100),
-    endsWith(size_category, "(4,10]") ~ (6/62*100),
-    endsWith(size_category, "(10,20]") ~ (4/62*100),
-    endsWith(size_category, "(20,50]") ~ (17/62*100),
-    endsWith(size_category, ">50") ~ (28/62*100)
-  )) %>%
-  mutate(Evaluated_Lakes = case_when( #lakes evaluated in design frame
-    endsWith(size_category, "(1,4]") ~ (29/116*100),
-    endsWith(size_category, "(4,10]") ~ (15/116*100),
-    endsWith(size_category, "(10,20]") ~ (18/116*100),
-    endsWith(size_category, "(20,50]") ~ (21/116*100),
-    endsWith(size_category, ">50") ~ (33/116*100)
-  )) %>% 
-  mutate(Design_Frame = case_when( #lakes in design frame
-    endsWith(size_category, "(1,4]") ~ (102/500*100),
-    endsWith(size_category, "(4,10]") ~ (87/500*100),
-    endsWith(size_category, "(10,20]") ~ (98/500*100),
-    endsWith(size_category, "(20,50]") ~ (105/500*100),
-    endsWith(size_category, ">50") ~ (108/500*100)
-  ))  %>% 
-  rename("Statewide estimate"=Probability_Sites,
-         "LMAS"=LMAS_Sites,
-         "Sampled lakes"=Target_Sampled,
-         "Evaluated lakes"=Evaluated_Lakes,
-         "Design frame"=Design_Frame) %>% 
+    endsWith(size_category, ">50") ~ (40.1))) %>% 
+  rename("Statewide"=Probability_Sites,
+         "LMAS"=LMAS_Sites) %>% 
   ungroup() %>%
   select(-PROB_CAT) %>% 
   gather(study,percentage,-size_category) %>% 
@@ -1134,25 +1144,27 @@ frame<-att %>%
   mutate(percentage=as.numeric(percentage),
          size_category=factor(size_category,levels=c("(1,4]","(4,10]","(10,20]","(20,50]",">50")))
 
-frame$study <- factor(frame$study, levels=c("Statewide estimate","LMAS","Sampled lakes","Evaluated lakes","Design frame"))
+frame$study <- factor(frame$study, levels=c("Statewide","LMAS"))
 
 
-ggplot(frame, aes(x=study,y=percentage)) +
+plot <- ggplot(frame, aes(x=study,y=percentage,fill=study)) +
   geom_col_pattern(stat = "identity", position = "stack",
                    aes(pattern_type = size_category,
                        pattern_fill = size_category), 
                    pattern= 'magick',
                    fill= 'white',
                    colour= 'black',
+                   pattern_scale = 0.5,
                    pattern_key_scale_factor = 2) +
   ylim(0,100)+
-  scale_pattern_type_discrete(choices = gridpattern::names_magick) +
-  scale_pattern_manual(guide = guide_legend(override.aes = list(pattern_scale = 0.5)))+
-  labs(title="Size classes in the Probability Study versus LMAS samples since 2010",y="Percent of Total",x="Size Category (hectares)")+
+  scale_pattern_type_discrete(choices = gridpattern::names_magick)+
+  labs(title="Size classes",y="Percent of Total",x="Size Category (hectares)")+
   theme(legend.key.height = unit(1, 'cm'), 
         legend.key.width = unit(1, 'cm'),
         axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
-  
+
+plot1 <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+
 ```
 
 ```{r trophic bias}
@@ -1219,9 +1231,34 @@ plot <- ggplot(forplot, aes(x=Category,fill=study)) +
         legend.key.width = unit(1, 'cm'))+
   scale_pattern_type_discrete(choices = c("gray15","bricks"))
 
-plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+# plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+# 
+# gridExtra::grid.arrange(plot)
 
-gridExtra::grid.arrange(plot)
+```
+```{r combined plot}
+plot2 <- ggplot(forplot[forplot$Indicator=="Phosphorus",], aes(x=Category,fill=study)) +
+  geom_bar_pattern(stat = "identity", position = position_dodge(),
+                   aes(y=Estimate.P,
+                       pattern_type = study,
+                       pattern_fill = study), 
+                   pattern= 'magick',
+                   fill= 'white',
+                   colour= 'black',
+                   pattern_scale = 0.5,
+                   pattern_key_scale_factor = 1.1)+
+  geom_errorbar(aes(ymin=LCB95Pct.P, ymax=UCB95Pct.P), width=0.2,
+                position=position_dodge(.9))+
+  ylim(0,100)+
+  labs(title="Phosphorus",x="Trophic Class",y="")+
+  theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1),
+        legend.key.height = unit(1, 'cm'),
+        legend.key.width = unit(1, 'cm'))+
+  scale_pattern_type_discrete(choices = c("gray15","bricks"))
+
+plot2 <- set_panel_size(p = plot2, width = unit(4, "cm"), height = unit(4,"cm"))
+
+gridExtra::grid.arrange(plot1, plot2,ncol=2)
 ```
 
 ## Session info
