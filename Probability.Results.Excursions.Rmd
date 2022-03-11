@@ -78,7 +78,7 @@ print(sum(att$WgtAdj))
 # Estimate excursions
 cat.extent <- cat_analysis(
   dframe=att,
-  vars=c("ammonia","dissolved_oxygen","nitrite","ph"),
+  vars=c("ammonia","dissolved_oxygen","nitrite","ph","phosphorus"),
   subpops = ,
   siteID = "siteID",
   weight = "WgtAdj",
@@ -133,7 +133,7 @@ results <- rbind(cat.extent,fully.support) %>%
   summarize(pct=(sum(pct)),pct_lcb=sum(pct_lcb),pct_ucb=sum(pct_ucb)) %>% 
   ungroup()
 
-results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","all parameters"))
+results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","phosphorus","all parameters"))
 
 results <- results %>% 
   mutate(Category=case_when(
