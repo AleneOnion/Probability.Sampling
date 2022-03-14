@@ -1190,9 +1190,8 @@ metals <- c("ARSENIC_BS_TOTAL",
             "IRON_OW_TOTAL",
             "MAGNESIUM_BS_TOTAL",
             "MAGNESIUM_OW_TOTAL")
-habs <- c("CYANOBACTERIA")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals,HABs=habs)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals)
 
 n<-0
 
@@ -1222,7 +1221,6 @@ for(i in vars.list){
       Indicator=="MAGNESIUM_OW_TOTAL"~"Magnesium, open water (ug/L)",
       Indicator=="DOC_mg_L"~"Dissolved organic carbon (mg/L)",
       Indicator=="NP_ratio"~"DIN:TP ratio",
-      Indicator=="CYANOBACTERIA"~"% Cyanobacteria",
       Indicator=TRUE~Indicator
     )) %>%
     filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)|
