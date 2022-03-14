@@ -829,7 +829,7 @@ for(i in vars.list){
     plot2<-ggplot(table[table$Indicator!="All parameters",],aes(x=Indicator,y=Estimate.P,fill=Category)) +
       geom_bar(position="stack", stat="identity")+
       ylim(0,100)+
-      labs(y="",x="Parameter")+
+      labs(y="",x="Parameter",title=" ")+
       theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))+
       scale_fill_grey()
     
