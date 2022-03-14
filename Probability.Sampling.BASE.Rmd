@@ -423,6 +423,11 @@ chem <- chem %>%
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
   rename(TN=NTL,TP=PTL)
 
+secchi <- read.csv("nla_2017_secchi-data.csv") %>% 
+  mutate(SECCHI=(DISAPPEARS+REAPPEARS)/2,
+         DATE_COL=mdy(DATE_COL)) %>% 
+  select(UID,SITE_ID,DATE_COL,SECCHI)
+
 oxygen <- read.csv("nla_2017_profile-data.csv")
 
 oxygen <- oxygen %>% 
@@ -445,8 +450,10 @@ oxygen <- oxygen %>%
   rename(OXYGEN=x) %>% 
   distinct()
 
-att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
-att.nla[,4:16] <- lapply(att.nla[,4:16],as.numeric)
+att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE) %>% 
+  mutate(DATE_COL=dmy(DATE_COL))
+att.nla <- merge(att.nla,secchi,by=c("UID","SITE_ID","DATE_COL"),all.x=TRUE)
+att.nla[,4:17] <- lapply(att.nla[,4:17],as.numeric)
 att.nla$DINTP <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000)
 
 # selecting parameters and adding trophic status
@@ -739,7 +746,7 @@ trophic <- c("phos_trophic","chla_trophic","N_LIMIT","secchi","leech","color")
 minerals <- c("zebra","alkalinity")
 in.situ <- c("ph","conductance")
 habs <- c("microcystin","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
-fishing <- c("AMMONIA_excursions","DO_excursions","NITRITE_excursions","PH_excursions","PHOSPHORUS_excursions","Fully_support")
+fishing <- c("AMMONIA_excursions","DO_excursions","NITRITE_excursions","PH_excursions","Fully_support")
 
 vars.list <- list(Trophic=trophic,Minerals=minerals,`In Situ`=in.situ,HABs=habs,`Fishing use`=fishing)
 
@@ -806,24 +813,46 @@ for(i in vars.list){
              Indicator=="DO_excursions"~"Dissolved oxygen",
              Indicator=="NITRITE_excursions"~"Nitrite",
              Indicator=="PH_excursions"~"pH",
-             Indicator=="PHOSPHORUS_excursions"~"Phosphorus",
              Indicator=="Fully_support"~"All parameters",
              Indicator=TRUE~Indicator)
     )
   
-  plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
-    geom_col()+
-    geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
-    theme(legend.position = "none")+
-    facet_wrap(.~Indicator,scales = "free")+
-    ylim(0,100)+
-    # scale_x_discrete(guide = guide_axis(n.dodge = 2))+
-    labs(y="Percent of Total",x="Condition category",title=paste(names(vars.list)[n],"Parameters"))+
-    theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
+  if(names(vars.list)[n]=="Fishing use"){
+    plot1<-ggplot(table[table$Indicator=="All parameters",],aes(x=Category,y=Estimate.P)) +
+      geom_col()+
+      geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+      theme(legend.position = "none")+
+      ylim(0,100)+
+      labs(y="Percent of Total",x="Fully supporting",title="Fishing Use Parameters")+
+      theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
+    
+    plot2<-ggplot(table[table$Indicator!="All parameters",],aes(x=Indicator,y=Estimate.P,fill=Category)) +
+      geom_bar(position="stack", stat="identity")+
+      ylim(0,100)+
+      labs(y="",x="Parameter")+
+      theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))+
+      scale_fill_grey()
+    
+    plot1 <- set_panel_size(p = plot1, width = unit(4, "cm"), height = unit(4,"cm"))
+    plot2 <- set_panel_size(p = plot2, width = unit(6, "cm"), height = unit(4,"cm"))
+    
+    gridExtra::grid.arrange(plot1,plot2,ncol=2)
+  }else{
+    plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
+      geom_col()+
+      geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
+      theme(legend.position = "none")+
+      facet_wrap(.~Indicator,scales = "free")+
+      ylim(0,100)+
+      labs(y="Percent of Total",x="Condition category",title=paste(names(vars.list)[n],"Parameters"))+
+      theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
+    
+    plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+    
+    gridExtra::grid.arrange(plot)
+  }
   
-  plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
   
-  gridExtra::grid.arrange(plot)
   
 }
 
@@ -851,8 +880,9 @@ metals <- c("ARSENIC_BS_TOTAL",
             "IRON_OW_TOTAL",
             "MAGNESIUM_BS_TOTAL",
             "MAGNESIUM_OW_TOTAL")
+habs <- c("CYANOBACTERIA")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals,HABs=habs)
 
 n<-0
 
@@ -891,6 +921,8 @@ for(i in vars.list){
       Indicator=="IRON_OW_TOTAL"~"Iron, open water (ug/L)",
       Indicator=="MAGNESIUM_BS_TOTAL"~"Magnesium, bottom (ug/L)",
       Indicator=="MAGNESIUM_OW_TOTAL"~"Magnesium, open water (ug/L)",
+      Indicator=="NP_ratio"~"DIN:TP ratio",
+      Indicator=="CYANOBACTERIA"~"% Cyanobacteria",
       Indicator=TRUE~Indicator
     )) %>% 
     mutate(Lower=case_when(
@@ -1065,7 +1097,7 @@ NH<-analysis$CDF %>%
 
 ##northern appalachian
 
-myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DOC_mg_L","CALCIUM_mg_L","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL")
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DOC_mg_L","CALCIUM_mg_L","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL","SECCHI_m","NP_ratio")
 
 nap.att <- nap.att %>% 
   rename(CHLOROPHYLL_ug_L=CHLA,
@@ -1076,7 +1108,9 @@ nap.att <- nap.att %>%
          CALCIUM_mg_L=CALCIUM,
          TRUE_COLOR=COLOR,
          SPEC_CONDUCTANCE=COND,
-         MAGNESIUM_OW_TOTAL=MAGNESIUM)
+         MAGNESIUM_OW_TOTAL=MAGNESIUM,
+         SECCHI_m=SECCHI,
+         NP_ratio=DINTP)
 
 analysis <- cont_analysis(
   dframe = nap.att,
@@ -1108,7 +1142,9 @@ nla.att <- nla.att %>%
          CALCIUM_mg_L=CALCIUM,
          TRUE_COLOR=COLOR,
          SPEC_CONDUCTANCE=COND,
-         MAGNESIUM_OW_TOTAL=MAGNESIUM)
+         MAGNESIUM_OW_TOTAL=MAGNESIUM,
+         SECCHI_m=SECCHI,
+         NP_ratio=DINTP)
 
 analysis <- cont_analysis(
   dframe = nla.att,
@@ -1141,7 +1177,8 @@ trophic <- c("CHLOROPHYLL_ug_L",
              "NITROGEN_mg_L",
              "PHOSPHORUS_ug_L",
              "SECCHI_m",
-             "TRUE_COLOR")
+             "TRUE_COLOR",
+             "NP_ratio")
 minerals <- c("CALCIUM_mg_L","ALKALINITY_mg_L")
 salt <- c("CHLORIDE_mg_L")
 in.situ <- c("DISSOLVED_OXYGEN_mg_L",
@@ -1153,8 +1190,9 @@ metals <- c("ARSENIC_BS_TOTAL",
             "IRON_OW_TOTAL",
             "MAGNESIUM_BS_TOTAL",
             "MAGNESIUM_OW_TOTAL")
+habs <- c("CYANOBACTERIA")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals,HABs=habs)
 
 n<-0
 
@@ -1183,29 +1221,31 @@ for(i in vars.list){
       Indicator=="MAGNESIUM_BS_TOTAL"~"Magnesium, bottom (ug/L)",
       Indicator=="MAGNESIUM_OW_TOTAL"~"Magnesium, open water (ug/L)",
       Indicator=="DOC_mg_L"~"Dissolved organic carbon (mg/L)",
+      Indicator=="NP_ratio"~"DIN:TP ratio",
+      Indicator=="CYANOBACTERIA"~"% Cyanobacteria",
       Indicator=TRUE~Indicator
     )) %>%
-  filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)|
-           (Indicator=="Chloride (mg/L)"&Value<250)|
-           (Indicator=="Total nitrogen (mg/L)"&Value<2.5)|
-           (Indicator=="Total phosphorus (ug/L)"&Value<150)|
-           (Indicator=="Dissolved organic carbon (mg/L)"&Value<50)|
-           (Indicator=="Calcium (mg/L)"&Value<50)|
-           (Indicator=="Conductance (mS/cm)" & Value<1000)|
-           (Indicator=="Magnesium, open water (ug/L)"&Value<25000)|
-           !(Indicator %in% c("Chlorophyll-a (ug/L)","Chloride (mg/L)","Total nitrogen (mg/L)", "Total phosphorus (ug/L)","Dissolved organic carbon (mg/L)","Calcium (mg/L)","Conductance (mS/cm)","Magnesium, open water (ug/L)"))) %>% 
+    filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)|
+             (Indicator=="Chloride (mg/L)"&Value<250)|
+             (Indicator=="Total nitrogen (mg/L)"&Value<2.5)|
+             (Indicator=="Total phosphorus (ug/L)"&Value<150)|
+             (Indicator=="Dissolved organic carbon (mg/L)"&Value<50)|
+             (Indicator=="Calcium (mg/L)"&Value<50)|
+             (Indicator=="Conductance (mS/cm)" & Value<1000)|
+             (Indicator=="Magnesium, open water (ug/L)"&Value<25000)|
+             !(Indicator %in% c("Chlorophyll-a (ug/L)","Chloride (mg/L)","Total nitrogen (mg/L)", "Total phosphorus (ug/L)","Dissolved organic carbon (mg/L)","Calcium (mg/L)","Conductance (mS/cm)","Magnesium, open water (ug/L)"))) %>% 
     mutate(Study=factor(Study, levels=c("NY","NLA","NAP","NH")))
   
   plot <- ggplot(table,aes(x=Value,y=Estimate.P,color=Study,shape=Study,linetype=Study))+
-  geom_line()+
-  ylim(0,100)+
-  scale_linetype_manual(values=c("solid","dotdash", "dotted","dashed"))+
-  facet_wrap(.~Indicator, scales="free")+
-        labs(y="Percent of lakes",title=paste(names(vars.list[n]),"Parameters"))
-
-plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
-
-gridExtra::grid.arrange(plot)
+    geom_line()+
+    ylim(0,100)+
+    scale_linetype_manual(values=c("solid","dotdash", "dotted","dashed"))+
+    facet_wrap(.~Indicator, scales="free")+
+    labs(y="Percent of lakes",title=paste(names(vars.list[n]),"Parameters"))
+  
+  plot <- set_panel_size(p = plot, width = unit(4, "cm"), height = unit(4,"cm"))
+  
+  gridExtra::grid.arrange(plot)
   
 }
 
@@ -1250,7 +1290,7 @@ plot <- ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
   labs(title="Size classes",y="Percent of Total",x="Size category (hectares)")+
   scale_fill_grey()+
   theme(legend.position = "none")
-  
+
 plot1 <- set_panel_size(p = plot, width = unit(6, "cm"), height = unit(4,"cm"))
 
 ```
