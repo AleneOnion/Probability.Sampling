@@ -1231,7 +1231,8 @@ for(i in vars.list){
              (Indicator=="Calcium (mg/L)"&Value<50)|
              (Indicator=="Conductance (mS/cm)" & Value<1000)|
              (Indicator=="Magnesium, open water (ug/L)"&Value<25000)|
-             !(Indicator %in% c("Chlorophyll-a (ug/L)","Chloride (mg/L)","Total nitrogen (mg/L)", "Total phosphorus (ug/L)","Dissolved organic carbon (mg/L)","Calcium (mg/L)","Conductance (mS/cm)","Magnesium, open water (ug/L)"))) %>% 
+             (Indicator=="DIN:TP ratio"&Value<50)|
+             !(Indicator %in% c("Chlorophyll-a (ug/L)","Chloride (mg/L)","Total nitrogen (mg/L)", "Total phosphorus (ug/L)","Dissolved organic carbon (mg/L)","Calcium (mg/L)","Conductance (mS/cm)","Magnesium, open water (ug/L)","DIN:TP ratio"))) %>% 
     mutate(Study=factor(Study, levels=c("NY","NLA","NAP","NH")))
   
   plot <- ggplot(table,aes(x=Value,y=Estimate.P,color=Study,shape=Study,linetype=Study))+
