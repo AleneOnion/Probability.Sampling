@@ -33,9 +33,9 @@ library(lubridate)
 library(egg)
 library(gridExtra)
 library(ggpattern)
+library(ggmap)
+library(maps)
 library(spsurvey) #This code was written for spsurvey v5.0.0
-
-`%!in%` <- Negate(`%in%`)
 
 ```
 
@@ -59,13 +59,13 @@ rm(list=setdiff(ls(), c('newdata',"start.time")))
 ```
 
 ```{r prep data}
-#list relevant variables
+#pick out relevant variables
 lab<-newdata %>%
   filter(SAMPLE_DATE>'2020-01-01') %>%
   mutate(combined=paste(CHARACTERISTIC_NAME,
                         INFORMATION_TYPE,
                         RSLT_RESULT_SAMPLE_FRACTION,
-                        sep = "_"))  %>%
+                        sep = "_"))  %>% #combining parameters into 1 name
   select(LAKE_HISTORY_ID,
          SAMPLE_DATE,
          combined,
@@ -76,8 +76,8 @@ lab<-newdata %>%
   mutate(RSLT_RESULT_VALUE=ifelse(!is.na(RSLT_LABORATORY_QUALIFIER)&(RSLT_LABORATORY_QUALIFIER=="U"|RSLT_LABORATORY_QUALIFIER=="UE"),"0",RSLT_RESULT_VALUE),
          RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE)) %>%
   filter(!is.na(RSLT_RESULT_VALUE),
-         is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"),
-         combined %in% c('CHLOROPHYLL A_OW_TOTAL',
+         is.na(RSLT_VALIDATOR_QUALIFIER)|(RSLT_VALIDATOR_QUALIFIER!="R"), #removing rejected samples
+         combined %in% c('CHLOROPHYLL A_OW_TOTAL', #picking parameters
                          'PHOSPHORUS, TOTAL_OW_TOTAL',
                          "MICROCYSTIN_OW_NA",
                          "NITROGEN, NITRATE (AS N)_OW_TOTAL",
@@ -169,28 +169,28 @@ thermocline<-thermocline %>%  #pull the lowest value for all
 epi<-lab %>% 
   inner_join(thermocline,by=c('LAKE_ID','SAMPLE_DATE','profile_depth')) %>% 
   filter(chemical_name %in% c("PH_DP_NA","SPECIFIC CONDUCTANCE_DP_NA")) %>% 
-  mutate(result_value = ifelse(chemical_name=="PH_DP_NA",(10^result_value),result_value)) %>% 
+  mutate(result_value = ifelse(chemical_name=="PH_DP_NA",(10^result_value),result_value)) %>%  #convert ph to [H+]
   distinct() %>% 
   arrange(LAKE_ID,SAMPLE_DATE,chemical_name,profile_depth) 
 
 epi<-epi %>% 
-  filter(profile_depth<=thermocline) %>% 
+  filter(profile_depth<=thermocline) %>% #shallower than thermocline
   distinct() %>% 
   group_by(LAKE_ID,SAMPLE_DATE,chemical_name) %>% 
-  summarize(Mean=mean(result_value,na.rm=TRUE),
+  summarize(Mean=mean(result_value,na.rm=TRUE), #creating epilimnetic mean
             n=n()) %>% 
   filter(n>2) %>% 
   select(LAKE_ID,SAMPLE_DATE,chemical_name,Mean)
 
 epi<-epi %>% 
-  mutate(Mean=ifelse(chemical_name=="PH_DP_NA",log10(Mean),Mean)) %>% 
+  mutate(Mean=ifelse(chemical_name=="PH_DP_NA",log10(Mean),Mean)) %>% #[H+] back to pH
   rename(result_value=Mean) %>% 
   mutate(chemical_name=case_when(
     chemical_name=="PH_DP_NA"~"PH_epi",
     chemical_name=="SPECIFIC CONDUCTANCE_DP_NA"~"SPECIFIC CONDUCTANCE_epi"
   ))
 
-#hypolimnetic means for ph and dissolved oxygen
+#hypolimnetic means for ph and dissolved oxygen, as above
 hypo<-lab %>% 
   inner_join(thermocline,by=c('LAKE_ID','SAMPLE_DATE','profile_depth')) %>% 
   filter(chemical_name %in% c("PH_DP_NA","DISSOLVED OXYGEN_DP_NA")) %>% 
@@ -199,7 +199,7 @@ hypo<-lab %>%
   arrange(LAKE_ID,SAMPLE_DATE,chemical_name,profile_depth) 
 
 hypo<-hypo %>% 
-  filter(profile_depth>=thermocline) %>% 
+  filter(profile_depth>=thermocline) %>%  #deeper than thermocline
   distinct() %>% 
   group_by(LAKE_ID,SAMPLE_DATE,chemical_name) %>% 
   summarize(Mean=mean(result_value,na.rm=TRUE),
@@ -212,7 +212,7 @@ hypo<-hypo %>%
   rename(result_value=Mean) %>% 
   mutate(chemical_name=case_when(
     chemical_name=="PH_DP_NA"~"PH_hypo",
-    chemical_name=="DISSOLVED OXYGEN_DP_NA"~"DISSOLVED OXYGEN_hypo"
+    chemical_name=="DISSOLVED OXYGEN_DP_NA"~"DISSOLVED_OXYGEN_mg_L"
   ))
 
 # read in site data
@@ -226,57 +226,66 @@ sites<-sites %>%
   mutate(Eval_Status=trimws(Eval_Status))
 
 # restrict to only the data in the probability study and spread the data
-att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>% 
+att<-merge(lab,epi,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>%  #merging in epi means for pH and spcond
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
-att<-merge(att,hypo,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>% 
+att<-merge(att,hypo,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE) %>%  #merging in hypo means for pH and DO
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   select(-result_value.x,-result_value.y)
-att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% 
+att<-merge(att,DO,by=c("LAKE_ID","SAMPLE_DATE","chemical_name"),all=TRUE)%>% #merging in epi DO (epa method)
   mutate(result_value=ifelse(is.na(result_value.x),result_value.y,result_value.x)) %>% 
   filter(!chemical_name %in% c("DISSOLVED OXYGEN_DP_NA","PH_DP_NA","SPECIFIC CONDUCTANCE_DP_NA","TEMPERATURE_DP_NA")) %>% 
   select(-result_value.x,-result_value.y)
-
-att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct()
+att<-merge(att,sites,by=c('LAKE_ID'),all.y = TRUE) %>% distinct() #filtering by site list
 att<-att %>% spread(chemical_name,result_value,fill = NA)
 
-att<-att %>% filter((Eval_Status=="Target_Sampled"&!is.na(`CHLOROPHYLL A_OW_TOTAL`)&!is.na(`PHOSPHORUS, TOTAL_OW_TOTAL`)) |
-                      (Eval_Status!="Target_Sampled") |
-                      (LAKE_ID %in% c("0703UWBXXX1","0801KAY0984A","1203MET0821","0602LUD0099","0801GUL0969")))
+att<-att %>% filter((Eval_Status=="Target_Sampled"&!is.na(`CHLOROPHYLL A_OW_TOTAL`)&!is.na(`PHOSPHORUS, TOTAL_OW_TOTAL`)) | #keep samples with valid results in both chl and tp if sampled
+                      (Eval_Status!="Target_Sampled") | #keep unsampled
+                      (LAKE_ID %in% c("0703UWBXXX1","0801KAY0984A","1203MET0821","0602LUD0099","0801GUL0969"))) %>% #special lakes that would get otherwise deleted because they do not have valid data but were sampled and only have 1 sampling event
+  rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`, #rename without spaces for cont_analysis later
+         "PHOSPHORUS_mg_L"=`PHOSPHORUS, TOTAL_OW_TOTAL`,
+         "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
+         "CHLORIDE_mg_L"=CHLORIDE_OW_TOTAL,
+         "CALCIUM_mg_L"=CALCIUM_OW_TOTAL,
+         "DOC_mg_L"=`CARBON, DISSOLVED ORGANIC (DOC)_OW_DISSOLVED`,
+         "SECCHI_m"=`DEPTH, SECCHI DISK DEPTH_SD_NA`,
+         "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
+         "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`,
+         "AMMONIA_N"=`NITROGEN, AMMONIA (AS N)_OW_TOTAL`)
 
 #creating thresholds
 att<-att %>% 
   # remove fields in the sites table that aren't relevant
   select(-Accessible,-Comments,-Contact,-STATUS) %>%
   # create total nitrogen
-  mutate(`NITROGEN, TOTAL`=case_when(
+  mutate(NITROGEN_mg_L=case_when(
     !is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~
       (`NITROGEN, NITRATE-NITRITE_OW_TOTAL`+`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`),
     is.na(`NITROGEN, KJELDAHL, TOTAL_OW_TOTAL`) ~ `NITROGEN, TOTAL_OW_TOTAL`)) %>%
   # DIN:TP
-  mutate(DINTP=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`) %>% 
+  mutate(NP_ratio=`NITROGEN, NITRATE (AS N)_OW_TOTAL`/PHOSPHORUS_mg_L) %>% 
   # trophic status
   mutate(phos_trophic=case_when(
-    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.01 ~ "Oligotrophic",
-    between(`PHOSPHORUS, TOTAL_OW_TOTAL`,0.01,0.02) ~ "Mesotrophic",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.02 ~ "Eutrophic")) %>%
+    PHOSPHORUS_mg_L<=0.01 ~ "Oligotrophic",
+    between(PHOSPHORUS_mg_L,0.01,0.02) ~ "Mesotrophic",
+    PHOSPHORUS_mg_L>=0.02 ~ "Eutrophic")) %>%
   mutate(chla_trophic=case_when(
-    `CHLOROPHYLL A_OW_TOTAL`<=2 ~ "Oligotrophic",
-    between(`CHLOROPHYLL A_OW_TOTAL`,2,8) ~ "Mesotrophic",
-    `CHLOROPHYLL A_OW_TOTAL`>=8 ~ "Eutrophic")) %>%
+    CHLOROPHYLL_ug_L<=2 ~ "Oligotrophic",
+    between(CHLOROPHYLL_ug_L,2,8) ~ "Mesotrophic",
+    CHLOROPHYLL_ug_L>=8 ~ "Eutrophic")) %>%
   # EPA thresholds
   mutate(TP_threshold=case_when(
-    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.016 ~ "Good",
-    between(`PHOSPHORUS, TOTAL_OW_TOTAL`, 0.016, 0.0279) ~ "Fair",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>=0.0279 ~ "Poor")) %>%
+    PHOSPHORUS_mg_L<=0.016 ~ "Good",
+    between(PHOSPHORUS_mg_L, 0.016, 0.0279) ~ "Fair",
+    PHOSPHORUS_mg_L>=0.0279 ~ "Poor")) %>%
   mutate(TN_threshold=case_when(
-    `NITROGEN, TOTAL`<=0.428 ~ "Good",
-    between(`NITROGEN, TOTAL`, 0.428, 0.655) ~ "Fair",
-    `NITROGEN, TOTAL`>=0.655 ~ "Poor")) %>%
+    NITROGEN_mg_L<=0.428 ~ "Good",
+    between(NITROGEN_mg_L, 0.428, 0.655) ~ "Fair",
+    NITROGEN_mg_L>=0.655 ~ "Poor")) %>%
   mutate(CHLA_threshold=case_when(
-    `CHLOROPHYLL A_OW_TOTAL`<=4.52 ~ "Good",
-    between(`CHLOROPHYLL A_OW_TOTAL`, 4.52, 8.43) ~ "Fair",
-    `CHLOROPHYLL A_OW_TOTAL`>=8.43 ~ "Poor")) %>%
+    CHLOROPHYLL_ug_L<=4.52 ~ "Good",
+    between(CHLOROPHYLL_ug_L, 4.52, 8.43) ~ "Fair",
+    CHLOROPHYLL_ug_L>=8.43 ~ "Poor")) %>%
   # microcystin
   mutate(microcystin=case_when(
     is.na(`MICROCYSTIN_OW_NA`) ~"Non-detect",
@@ -289,28 +298,28 @@ att<-att %>%
     `DISSOLVED OXYGEN_epi`>=5 ~ "Good")) %>% 
   #nutrient limitation
   mutate(N_LIMIT=case_when(
-    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`<=10 ~ "N-limited",
-    between(`NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`, 10, 20) ~ "Co-limited",
-    `NITROGEN, TOTAL`/`PHOSPHORUS, TOTAL_OW_TOTAL`>=20 ~ "P-limited")) %>% 
+    NITROGEN_mg_L/PHOSPHORUS_mg_L<=10 ~ "N-limited",
+    between(NITROGEN_mg_L/PHOSPHORUS_mg_L, 10, 20) ~ "Co-limited",
+    NITROGEN_mg_L/PHOSPHORUS_mg_L>=20 ~ "P-limited")) %>% 
   #secchi
   mutate(secchi=case_when(
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`<=2 ~ "Eutrophic",
-    between(`DEPTH, SECCHI DISK DEPTH_SD_NA`, 2, 5) ~ "Mesotrophic",
-    `DEPTH, SECCHI DISK DEPTH_SD_NA`>=5 ~ "Oligotrophic")) %>% 
+    SECCHI_m<=2 ~ "Eutrophic",
+    between(SECCHI_m, 2, 5) ~ "Mesotrophic",
+    SECCHI_m>=5 ~ "Oligotrophic")) %>% 
   #zebra mussels
   mutate(zebra=case_when(
-    CALCIUM_OW_TOTAL<=10 ~ "Not susceptible",
-    between(CALCIUM_OW_TOTAL, 10, 20) ~ "May be susceptible",
-    CALCIUM_OW_TOTAL>=20 ~ "Highly susceptible")) %>% 
+    CALCIUM_mg_L<=10 ~ "Not susceptible",
+    between(CALCIUM_mg_L, 10, 20) ~ "May be susceptible",
+    CALCIUM_mg_L>=20 ~ "Highly susceptible")) %>% 
   #cslap
   mutate(conductance=case_when(
-    `SPECIFIC CONDUCTANCE_epi`<=125 ~ "Soft",
-    between(`SPECIFIC CONDUCTANCE_epi`, 125, 250) ~ "Average",
-    `SPECIFIC CONDUCTANCE_epi`>=250 ~ "Hard")) %>%
+    SPEC_CONDUCTANCE<=125 ~ "Soft",
+    between(SPEC_CONDUCTANCE, 125, 250) ~ "Average",
+    SPEC_CONDUCTANCE>=250 ~ "Hard")) %>%
   mutate(color=case_when(
-    `TRUE COLOR_OW_TOTAL`<=10 ~ "Uncolored",
-    between(`TRUE COLOR_OW_TOTAL`, 10, 30) ~ "Weak",
-    `TRUE COLOR_OW_TOTAL`>=30 ~ "High")) %>% 
+    TRUE_COLOR<=10 ~ "Uncolored",
+    between(TRUE_COLOR, 10, 30) ~ "Weak",
+    TRUE_COLOR>=30 ~ "High")) %>% 
   mutate(ph=case_when(
     `PH_epi`<=6.5 ~ "Acidic",
     between(`PH_epi`, 6.5, 7.5) ~ "~Neutral",
@@ -318,18 +327,18 @@ att<-att %>%
     `PH_epi`>=8.5 ~ "Highly alk")) %>% 
   #leech
   mutate(leech=case_when(
-    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`<=20 ~ "Blue",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`<=20 ~ "Green",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`<=0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Brown",
-    `PHOSPHORUS, TOTAL_OW_TOTAL`>0.030 & `TRUE COLOR_OW_TOTAL`>20 ~ "Murky"
+    PHOSPHORUS_mg_L<=0.030 & TRUE_COLOR<=20 ~ "Blue",
+    PHOSPHORUS_mg_L>0.030 & TRUE_COLOR<=20 ~ "Green",
+    PHOSPHORUS_mg_L<=0.030 & TRUE_COLOR>20 ~ "Brown",
+    PHOSPHORUS_mg_L>0.030 & TRUE_COLOR>20 ~ "Murky"
   )) %>% 
   #chloride
   mutate(chloride=case_when(
-    `CHLORIDE_OW_TOTAL` <= 35 ~ "Low",
-    between(`CHLORIDE_OW_TOTAL`,35,250) ~ "Medium",
-    `CHLORIDE_OW_TOTAL` >= 250 ~ "High",
-    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_OW_TOTAL`) ~ "Low")) %>% 
-  #chlorophyll
+    `CHLORIDE_mg_L` <= 35 ~ "Low",
+    between(`CHLORIDE_mg_L`,35,250) ~ "Medium",
+    `CHLORIDE_mg_L` >= 250 ~ "High",
+    Eval_Status=="Target_Sampled" & is.na(`CHLORIDE_mg_L`) ~ "Low")) %>% 
+  #algal composition
   rename(CHLOROPHYTE=`CHLOROPHYLL A (PROBE) CONCENTRATION, CHLOROPHYTE (GREEN ALGAE)_OW_NA`,
          CRYPTOPHYTA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CRYPTOPHYTA (CRYPTOPHYTES)_OW_NA`,
          CYANOBACTERIA=`CHLOROPHYLL A (PROBE) CONCENTRATION, CYANOBACTERIA (BLUEGREEN)_OW_NA`,
@@ -353,10 +362,10 @@ att<-att %>%
     DINOPHYTA/PROBE_TOTAL>=0.5 ~ "High")) %>% 
   #alkalinity
   mutate(alkalinity=case_when(
-    `ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL` <= 60 ~ "Soft",
-    between(`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,60,120) ~ "Moderately hard",
-    between(`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,120,180) ~ "Hard",
-    `ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL` >= 180 ~ "Very hard"))
+    ALKALINITY_mg_L <= 60 ~ "Soft",
+    between(ALKALINITY_mg_L,60,120) ~ "Moderately hard",
+    between(ALKALINITY_mg_L,120,180) ~ "Hard",
+    ALKALINITY_mg_L >= 180 ~ "Very hard"))
 
 # Create a Target/NonTarget status variable
 att<-att %>% 
@@ -376,7 +385,7 @@ att <- att %>%
             with_ties = F) %>% # change with_ties to TRUE to discard NA values
   select(-has_aug)
 
-att<-att %>% 
+att<-att %>%  #creating adjusted weights
   ungroup() %>% 
   mutate(WgtAdj=case_when(
     PROB_CAT=="(1,4]"~(1828/29),
@@ -394,7 +403,7 @@ excursions <- excursions %>%
   mutate(LAKE_ID=toupper(LAKE_ID)) %>% 
   mutate(all_params=case_when(
     ammonia==0 & chlorophyll_a==0 & dissolved_oxygen==0 & nitrite==0 & ph==0 & phosphorus==0 ~0,
-    LAKE_ID=TRUE~1
+    LAKE_ID=TRUE~1 #create fully supporting variable
   )) %>% 
   rename(AMMONIA_excursions=ammonia,
          DO_excursions=dissolved_oxygen,
@@ -403,7 +412,7 @@ excursions <- excursions %>%
          PHOSPHORUS_excursions=phosphorus,
          Fully_support=all_params)
 
-att<-merge(att,excursions,by="LAKE_ID")
+att<-merge(att,excursions,by="LAKE_ID") #merging in fishing use excursions
 
 ```
 
@@ -414,7 +423,7 @@ Additionally, I will load in NLA, NAP and NH data:
 # read in NLA data
 setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
 
-chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
+chem <- read.csv("nla_2017_water_chemistry_chla-data.csv") #read in chemistry data
 
 chem <- chem %>% 
   filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE","MAGNESIUM","DOC","COND","AMMONIA_N","CALCIUM","PH"),
@@ -423,12 +432,12 @@ chem <- chem %>%
   pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
   rename(TN=NTL,TP=PTL)
 
-secchi <- read.csv("nla_2017_secchi-data.csv") %>% 
-  mutate(SECCHI=(DISAPPEARS+REAPPEARS)/2,
+secchi <- read.csv("nla_2017_secchi-data.csv") %>% #read in secchi data
+  mutate(SECCHI=(DISAPPEARS+REAPPEARS)/2, #average the two depths
          DATE_COL=mdy(DATE_COL)) %>% 
   select(UID,SITE_ID,DATE_COL,SECCHI)
 
-oxygen <- read.csv("nla_2017_profile-data.csv")
+oxygen <- read.csv("nla_2017_profile-data.csv") #read in dissolved oxygen data
 
 oxygen <- oxygen %>% 
   select(UID,SITE_ID,DATE_COL,DEPTH,OXYGEN) %>% 
@@ -440,7 +449,7 @@ oxygen <- oxygen %>%
   filter(keep=="yes") %>%
   select(-keep)
 
-# mean DO for each lake
+# mean DO for each lake of top 2m
 DO <- aggregate(oxygen$OXYGEN,list(oxygen$SITE_ID,oxygen$DATE_COL),FUN=mean)
 # add back in
 oxygen <- merge(oxygen,DO,by.x=c("SITE_ID","DATE_COL"),by.y=c("Group.1","Group.2"),all.x=TRUE)
@@ -450,37 +459,49 @@ oxygen <- oxygen %>%
   rename(OXYGEN=x) %>% 
   distinct()
 
-att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE) %>% 
+att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE) %>% #merging chemistry and oxygen data
   mutate(DATE_COL=dmy(DATE_COL))
-att.nla <- merge(att.nla,secchi,by=c("UID","SITE_ID","DATE_COL"),all.x=TRUE)
-att.nla[,4:17] <- lapply(att.nla[,4:17],as.numeric)
-att.nla$DINTP <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000)
+att.nla <- merge(att.nla,secchi,by=c("UID","SITE_ID","DATE_COL"),all.x=TRUE) #merging in secchi data
+att.nla[,4:17] <- lapply(att.nla[,4:17],as.numeric) #convert all columns to numeric
+att.nla$NP_ratio <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000) #create n:p ratio
+att.nla <- att.nla %>% #rename to match above
+  rename(CHLOROPHYLL_ug_L=CHLA,
+         NITROGEN_mg_L=TN,
+         PHOSPHORUS_ug_L=TP,
+         CHLORIDE_mg_L=CHLORIDE,
+         DOC_mg_L=DOC,
+         CALCIUM_mg_L=CALCIUM,
+         TRUE_COLOR=COLOR,
+         SPEC_CONDUCTANCE=COND,
+         MAGNESIUM_OW_TOTAL=MAGNESIUM,
+         SECCHI_m=SECCHI,
+         NP_ratio=NP_ratio)
 
 # selecting parameters and adding trophic status
 
 att.nla<-att.nla %>% 
   # trophic status
   mutate(phos_trophic=case_when(
-    TP<=10 ~ "oligotrophic",
-    between(TP,10,20) ~ "mesotrophic",
-    TP>=20 ~ "eutrophic")) %>%
+    PHOSPHORUS_ug_L<=10 ~ "oligotrophic",
+    between(PHOSPHORUS_ug_L,10,20) ~ "mesotrophic",
+    PHOSPHORUS_ug_L>=20 ~ "eutrophic")) %>%
   mutate(chla_trophic=case_when(
-    CHLA<=2 ~ "oligotrophic",
-    between(CHLA,2,8) ~ "mesotrophic",
-    CHLA>=8 ~ "eutrophic")) %>%
+    CHLOROPHYLL_ug_L<=2 ~ "oligotrophic",
+    between(CHLOROPHYLL_ug_L,2,8) ~ "mesotrophic",
+    CHLOROPHYLL_ug_L>=8 ~ "eutrophic")) %>%
   # EPA thresholds
   mutate(TP_threshold=case_when(
-    TP<=16 ~ "Good",
-    between(TP, 16, 27.9) ~ "Fair",
-    TP>=27.9 ~ "Poor")) %>%
+    PHOSPHORUS_ug_L<=16 ~ "Good",
+    between(PHOSPHORUS_ug_L, 16, 27.9) ~ "Fair",
+    PHOSPHORUS_ug_L>=27.9 ~ "Poor")) %>%
   mutate(TN_threshold=case_when(
-    TN<=0.428 ~ "Good",
-    between(TN, 0.428, 0.655) ~ "Fair",
-    TN>=0.655 ~ "Poor")) %>%
+    NITROGEN_mg_L<=0.428 ~ "Good",
+    between(NITROGEN_mg_L, 0.428, 0.655) ~ "Fair",
+    NITROGEN_mg_L>=0.655 ~ "Poor")) %>%
   mutate(CHLA_threshold=case_when(
-    CHLA<=4.52 ~ "Good",
-    between(CHLA, 4.52, 8.43) ~ "Fair",
-    CHLA>=8.43 ~ "Poor")) %>%
+    CHLOROPHYLL_ug_L<=4.52 ~ "Good",
+    between(CHLOROPHYLL_ug_L, 4.52, 8.43) ~ "Fair",
+    CHLOROPHYLL_ug_L>=8.43 ~ "Poor")) %>%
   # dissolved oxygen
   mutate(d.oxygen=case_when(
     OXYGEN<=3 ~ "Poor",
@@ -488,22 +509,22 @@ att.nla<-att.nla %>%
     OXYGEN>=5 ~ "Good")) %>% 
   #leech
   mutate(leech=case_when(
-    TP<=30 & COLOR<=20 ~ "Blue",
-    TP>30 & COLOR<=20 ~ "Green",
-    TP<=30 & COLOR>20 ~ "Brown",
-    TP>30 & COLOR>20 ~ "Murky"
+    PHOSPHORUS_ug_L<=30 & TRUE_COLOR<=20 ~ "Blue",
+    PHOSPHORUS_ug_L>30 & TRUE_COLOR<=20 ~ "Green",
+    PHOSPHORUS_ug_L<=30 & TRUE_COLOR>20 ~ "Brown",
+    PHOSPHORUS_ug_L>30 & TRUE_COLOR>20 ~ "Murky"
   )) %>% 
   #chloride
   mutate(chloride=case_when(
-    CHLORIDE <= 35 ~ "Low",
-    between(CHLORIDE,35,250) ~ "Medium",
-    CHLORIDE >= 250 ~ "High"))
+    CHLORIDE_mg_L <= 35 ~ "Low",
+    between(CHLORIDE_mg_L,35,250) ~ "Medium",
+    CHLORIDE_mg_L >= 250 ~ "High"))
 
-sites <- read.csv("nla_2017_site_information-data.csv")
+sites <- read.csv("nla_2017_site_information-data.csv") #read in site info for filtering
 
 nap.sites <- sites %>% 
   mutate(include=case_when(
-    AG_ECO9=="NAP" & AREA_HA>2.63 ~ "yes",
+    AG_ECO9=="NAP" & AREA_HA>2.63 ~ "yes", #creating subcategory to keep sites in northern appalachian ecoregion with area >6.4 acres
     SITE_ID=TRUE ~ "no"
   )) %>% 
   select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
@@ -511,7 +532,7 @@ nap.sites <- sites %>%
 
 nla.sites <- sites %>% 
   mutate(include=case_when(
-    AREA_HA>2.63 ~ "yes",
+    AREA_HA>2.63 ~ "yes", #creating subcategory to keep sites with area >6.4 acres
     SITE_ID=TRUE ~ "no"
   )) %>% 
   select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
@@ -524,28 +545,30 @@ nap.att <- merge(att.nla,nap.sites,by=c("UID","SITE_ID"))
 
 ```{r NH data}
 
-nh.att <- read.csv("New_Hampshire_Lakes_2017_Design_Status_20211027_KH_EPA.csv", na.strings=c(""," ","NA"))
-
-# selecting parameters and adding trophic status
+nh.att <- read.csv("New_Hampshire_Lakes_2017_Design_Status_20211027_KH_EPA.csv", na.strings=c(""," ","NA")) #read in site data
 
 nh.att<-nh.att %>% 
   mutate(include=case_when(
-    AREA_HA>2.63 ~ "yes",
+    AREA_HA>2.63 ~ "yes", #create subcategory for keeping lakes larger than 6.4 acres
     SITE_ID=TRUE ~ "no"))
 
-chem <- read.csv("BasicNHChem_ForNY.csv")
+chem <- read.csv("BasicNHChem_ForNY.csv") #read in chem data
 
-#merge
-
+#merge by site
 nh.att <- merge(nh.att,chem,by.x="SITE_ID",by.y="NLA.ID",all.x=T) %>% 
   mutate(CHLORIDE=case_when(
-    CHLORIDE!="<3" ~ as.numeric(CHLORIDE),
+    CHLORIDE!="<3" ~ as.numeric(CHLORIDE), #method detection limit for chloride is 3, convert smaller values to 0
     CHLORIDE=="<3" ~ 0)) %>% 
   mutate(CHLORIDE_threshold=case_when(
     CHLORIDE<=35 ~ "Low",
     between(CHLORIDE,35,250) ~ "Medium",
     CHLORIDE>=250 ~ "High"
-  ))
+  )) %>% 
+  mutate(TN_UG.L=TN_UG.L/1000) %>% 
+  rename(CHLOROPHYLL_ug_L=CHLOROPHYLL.A.x,
+         NITROGEN_mg_L=TN_UG.L,
+         PHOSPHORUS_ug_L=PHOSPHORUS.ug.L.x,
+         CHLORIDE_mg_L=CHLORIDE)
 
 ```
 
@@ -564,7 +587,7 @@ vars <- c("phos_trophic", "chla_trophic", "TP_threshold", "TN_threshold", "CHLA_
 CatExtent <- cat_analysis(
   dframe=att,
   vars=vars, 
-  subpops = , #for example could separate by area category or year
+  subpops = ,
   siteID = "siteID",
   weight = "WgtAdj", #name will probably change in future
   xcoord = "xcoord",
@@ -576,8 +599,8 @@ table <- CatExtent %>%
          Estimate.P,
          LCB95Pct.P,
          UCB95Pct.P) %>% 
-  filter(Category!="Total") %>% 
-  mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
+  filter(Category!="Total") %>% #remove totals
+  mutate(Category=factor(Category, levels=c("Poor","Fair","Good", #factor for plotting
                                             "Blue","Green","Brown","Murky",
                                             "High","Weak","Uncolored",
                                             "Medium","Low",
@@ -588,7 +611,7 @@ table <- CatExtent %>%
                                             "N-limited","Co-limited","P-limited",
                                             "Non-detect","Microcystin detected","Most disturbed",
                                             "Excursion","Non-excursion")),
-         Indicator=case_when(
+         Indicator=case_when( #rename for plotting
            Indicator=="phos_trophic"~"Phosphorus", 
            Indicator=="chla_trophic"~"Chlorophyll-a", 
            Indicator=="TP_threshold"~"Total phosphorus", 
@@ -611,9 +634,9 @@ hux <- as_hux(table) #I use huxtable because kable doesn't work on my computer b
 number_format(hux) <- 2
 theme_plain(hux)
 
-ny.cat <- table %>% filter(Indicator %in% c("Total phosphorus","Total nitrogen","Total chlorophyll","Dissolved oxygen","Chloride")) %>% mutate(Study="NY")
+ny.cat <- table %>% filter(Indicator %in% c("Total phosphorus","Total nitrogen","Total chlorophyll","Dissolved oxygen","Chloride")) %>% mutate(Study="NY") #prep for NLA/NH/NAP comparison plots later
 
-probability.cat <- table %>% filter(Indicator %in% c("Phosphorus","Chlorophyll-a","Secchi"))
+probability.cat <- table %>% filter(Indicator %in% c("Phosphorus","Chlorophyll-a","Secchi")) #prep for historical bias plot later
 
 ```
 
@@ -627,20 +650,6 @@ As above, in the future the `weight` argument should be part of the site design 
 
 #To conduct analysis on a continuous variable, using a new list of CONTINUOUS variables, also note that cont_analysis() doesn't like variable names that have spaces so you will need to rename these. It's helpful to put the units in the name.
 
-att <- att %>% rename("CHLOROPHYLL_ug_L"=`CHLOROPHYLL A_OW_TOTAL`,
-                      "NITROGEN_mg_L"=`NITROGEN, TOTAL`,
-                      "PHOSPHORUS_mg_L"=`PHOSPHORUS, TOTAL_OW_TOTAL`,
-                      "DISSOLVED_OXYGEN_mg_L"=`DISSOLVED OXYGEN_hypo`,
-                      "ALKALINITY_mg_L"=`ALKALINITY, TOTAL (AS CACO3)_OW_TOTAL`,
-                      "CHLORIDE_mg_L"=CHLORIDE_OW_TOTAL,
-                      "CALCIUM_mg_L"=CALCIUM_OW_TOTAL,
-                      "DOC_mg_L"=`CARBON, DISSOLVED ORGANIC (DOC)_OW_DISSOLVED`,
-                      "SECCHI_m"=`DEPTH, SECCHI DISK DEPTH_SD_NA`,
-                      "TRUE_COLOR"=`TRUE COLOR_OW_TOTAL`,
-                      "SPEC_CONDUCTANCE"=`SPECIFIC CONDUCTANCE_epi`,
-                      "AMMONIA_N"=`NITROGEN, AMMONIA (AS N)_OW_TOTAL`,
-                      "NP_ratio"=DINTP)
-
 myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","CHLORIDE_mg_L","DISSOLVED_OXYGEN_mg_L","DOC_mg_L","CALCIUM_mg_L","SECCHI_m","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL","PH_hypo","ARSENIC_BS_TOTAL", "ARSENIC_OW_TOTAL", "IRON_BS_TOTAL", "IRON_OW_TOTAL",  "MAGNESIUM_BS_TOTAL", "MAGNESIUM_OW_TOTAL","ALKALINITY_mg_L","NP_ratio")
 
 #Creates 3 estimations in list: CDF, percentiles, means.
@@ -653,7 +662,7 @@ analysis <- cont_analysis(
   xcoord = "xcoord",
   ycoord = "ycoord")
 
-NY<-analysis$CDF %>% 
+NY<-analysis$CDF %>% #prep for comparison with NLA/NAP/NH plots later
   select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
   mutate(Study="NY") %>% 
   mutate(Value=case_when(
@@ -718,9 +727,6 @@ gridExtra::grid.arrange(plot)
 ```{r map}
 
 #fetch map
-library(ggmap)
-library(maps)
-
 states <- map_data("state")
 ny <- subset(states, region %in% c("new york"))
 
@@ -748,21 +754,20 @@ in.situ <- c("ph","conductance")
 habs <- c("microcystin","chlorophyte","cryptophyta","cyanobacteria","dinophyta")
 fishing <- c("AMMONIA_excursions","DO_excursions","NITRITE_excursions","PH_excursions","Fully_support")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,`In Situ`=in.situ,HABs=habs,`Fishing use`=fishing)
+vars.list <- list(Trophic=trophic,Minerals=minerals,`In Situ`=in.situ,HABs=habs,`Fishing use`=fishing) #name groups for labeling in plots
 
 n<-0
 
-#analysis
-for(i in vars.list){
+for(i in vars.list){ #loop to plot each group as 1 facet wrapped image
   
   n<-n+1
   
   CatExtent <- cat_analysis(
     dframe=att,
     vars=i, 
-    subpops = , #for example could separate by area category or year
+    subpops = , 
     siteID = "siteID",
-    weight = "WgtAdj", #name will probably change in future
+    weight = "WgtAdj", 
     xcoord = "xcoord",
     ycoord = "ycoord")
   
@@ -774,11 +779,11 @@ for(i in vars.list){
            UCB95Pct.P) %>% 
     filter(Category!="Total") %>% 
     mutate(Category=case_when(
-      Category==0  ~ "Non-excursion",
+      Category==0  ~ "Non-excursion", #for fishing use
       Category==1 ~ "Excursion",
       Category=TRUE~Category
     )) %>% 
-    mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
+    mutate(Category=factor(Category, levels=c("Poor","Fair","Good", #factor for plots
                                               "Blue","Green","Brown","Murky",
                                               "High","Weak","Uncolored",
                                               "Medium","Low",
@@ -789,7 +794,7 @@ for(i in vars.list){
                                               "N-limited","Co-limited","P-limited",
                                               "Non-detect","Microcystin detected","Most disturbed",
                                               "Excursion","Non-excursion")),
-           Indicator=case_when(
+           Indicator=case_when( #rename for plots
              Indicator=="phos_trophic"~"Phosphorus", 
              Indicator=="chla_trophic"~"Chlorophyll-a", 
              Indicator=="TP_threshold"~"Total phosphorus", 
@@ -817,16 +822,17 @@ for(i in vars.list){
              Indicator=TRUE~Indicator)
     )
   
-  if(names(vars.list)[n]=="Fishing use"){
-    plot1<-ggplot(table[table$Indicator=="All parameters",],aes(x=Category,y=Estimate.P)) +
+  if(names(vars.list)[n]=="Fishing use"){ #plot fishing use differently
+    plot1<-ggplot(table[table$Indicator=="All parameters",],aes(x=Category,y=Estimate.P,fill=Category)) + #all parameter normal bar plot
       geom_col()+
       geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
       theme(legend.position = "none")+
       ylim(0,100)+
       labs(y="Percent of Total",x="Fully supporting",title="Fishing Use Parameters")+
-      theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))
+      theme(axis.text.x = element_text(angle = 45,vjust = 1, hjust=1))+
+      scale_fill_grey()
     
-    plot2<-ggplot(table[table$Indicator!="All parameters",],aes(x=Indicator,y=Estimate.P,fill=Category)) +
+    plot2<-ggplot(table[table$Indicator!="All parameters",],aes(x=Indicator,y=Estimate.P,fill=Category)) + #stacked plot for individual parameters
       geom_bar(position="stack", stat="identity")+
       ylim(0,100)+
       labs(y="",x="Parameter",title=" ")+
@@ -837,7 +843,7 @@ for(i in vars.list){
     plot2 <- set_panel_size(p = plot2, width = unit(6, "cm"), height = unit(4,"cm"))
     
     gridExtra::grid.arrange(plot1,plot2,ncol=2)
-  }else{
+  }else{ #all other groups are plotted here
     plot<-ggplot(table,aes(x=Category,y=Estimate.P)) +
       geom_col()+
       geom_errorbar(aes(ymin=LCB95Pct.P,ymax=UCB95Pct.P),width=0.2)+
@@ -862,7 +868,6 @@ for(i in vars.list){
 
 ``` {r cont group, fig.dim = c(6,5)}
 
-#list variables you are interested in and defined above
 trophic <- c("CHLOROPHYLL_ug_L",
              "NITROGEN_mg_L",
              "PHOSPHORUS_mg_L",
@@ -882,11 +887,11 @@ metals <- c("ARSENIC_BS_TOTAL",
             "MAGNESIUM_OW_TOTAL")
 habs <- c("CYANOBACTERIA")
 
-vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals,HABs=habs)
+vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,Metals=metals,HABs=habs) #named for plotting
 
 n<-0
 
-for(i in vars.list){
+for(i in vars.list){ #loop to plot each group as 1 facet wrapped image
   
   n<-n+1
   
@@ -903,7 +908,7 @@ for(i in vars.list){
   table<-analysis$CDF %>% 
     select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
     filter(Indicator %in% i) %>% 
-    mutate(Indicator=case_when(
+    mutate(Indicator=case_when( #rename for plots
       Indicator=="CHLOROPHYLL_ug_L"~"Chlorophyll-a (ug/L)",
       Indicator=="NITROGEN_mg_L"~"Total nitrogen (mg/L)",
       Indicator=="PHOSPHORUS_mg_L"~"Total phosphorus (mg/L)",
@@ -925,7 +930,7 @@ for(i in vars.list){
       Indicator=="CYANOBACTERIA"~"% Cyanobacteria",
       Indicator=TRUE~Indicator
     )) %>% 
-    mutate(Lower=case_when(
+    mutate(Lower=case_when( #defining lower thresholds for plots
       Indicator=="Chlorophyll-a (ug/L)"~2,
       Indicator=="Total phosphorus (mg/L)"~0.01,
       Indicator=="Specific conductance (mS/cm)"~125,
@@ -934,7 +939,7 @@ for(i in vars.list){
       Indicator=="True color (PCU)"~10,
       Indicator=="Secchi disk depth (m)"~2,
       Indicator=TRUE~as.numeric(""))) %>% 
-    mutate(Upper=case_when(
+    mutate(Upper=case_when( #defining upper thresholds for plots
       Indicator=="Chlorophyll-a (ug/L)"~8,
       Indicator=="Total phosphorus (mg/L)"~0.02,
       Indicator=="Specific conductance (mS/cm)"~250,
@@ -1051,10 +1056,11 @@ nh.cat <- nh.analysis %>%
                              Indicator=="DO"~"Dissolved oxygen",
                              Indicator=="CHLORIDE_threshold"~"Chloride"))
 
+cats <- rbind(ny.cat,nh.cat,nla.cat,nap.cat) #combine results from all categorical analyses
+
 ```
 
 ```{r all dots plot}
-cats <- rbind(ny.cat,nh.cat,nla.cat,nap.cat)
 
 plot <- ggplot(cats,aes(x=Category,y=Estimate.P,color=Study,shape=Study))+
   geom_point(position=position_dodge(width=0.2))+
@@ -1075,13 +1081,6 @@ gridExtra::grid.arrange(plot)
 
 ##new hampshire
 
-nh.att <- nh.att %>% 
-  mutate(TN_UG.L=TN_UG.L/1000) %>% 
-  rename(CHLOROPHYLL_ug_L=CHLOROPHYLL.A.x,
-         NITROGEN_mg_L=TN_UG.L,
-         PHOSPHORUS_ug_L=PHOSPHORUS.ug.L.x,
-         CHLORIDE_mg_L=CHLORIDE)
-
 analysis <- cont_analysis(
   dframe = nh.att,
   vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
@@ -1098,19 +1097,6 @@ NH<-analysis$CDF %>%
 ##northern appalachian
 
 myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L","DOC_mg_L","CALCIUM_mg_L","TRUE_COLOR","SPEC_CONDUCTANCE","AMMONIA_N","MAGNESIUM_OW_TOTAL","SECCHI_m","NP_ratio")
-
-nap.att <- nap.att %>% 
-  rename(CHLOROPHYLL_ug_L=CHLA,
-         NITROGEN_mg_L=TN,
-         PHOSPHORUS_ug_L=TP,
-         CHLORIDE_mg_L=CHLORIDE,
-         DOC_mg_L=DOC,
-         CALCIUM_mg_L=CALCIUM,
-         TRUE_COLOR=COLOR,
-         SPEC_CONDUCTANCE=COND,
-         MAGNESIUM_OW_TOTAL=MAGNESIUM,
-         SECCHI_m=SECCHI,
-         NP_ratio=DINTP)
 
 analysis <- cont_analysis(
   dframe = nap.att,
@@ -1132,19 +1118,6 @@ NAP<-analysis$CDF %>%
   ))
 
 ##national
-
-nla.att <- nla.att %>% 
-  rename(CHLOROPHYLL_ug_L=CHLA,
-         NITROGEN_mg_L=TN,
-         PHOSPHORUS_ug_L=TP,
-         CHLORIDE_mg_L=CHLORIDE,
-         DOC_mg_L=DOC,
-         CALCIUM_mg_L=CALCIUM,
-         TRUE_COLOR=COLOR,
-         SPEC_CONDUCTANCE=COND,
-         MAGNESIUM_OW_TOTAL=MAGNESIUM,
-         SECCHI_m=SECCHI,
-         NP_ratio=DINTP)
 
 analysis <- cont_analysis(
   dframe = nla.att,
@@ -1195,7 +1168,7 @@ vars.list <- list(Trophic=trophic,Minerals=minerals,Salt=salt,`In Situ`=in.situ,
 
 n<-0
 
-for(i in vars.list){
+for(i in vars.list){ #loop to plot each group as 1 facet wrapped image
   
   n<-n+1
   
@@ -1223,7 +1196,7 @@ for(i in vars.list){
       Indicator=="NP_ratio"~"DIN:TP ratio",
       Indicator=TRUE~Indicator
     )) %>%
-    filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)|
+    filter((Indicator=="Chlorophyll-a (ug/L)"&Value<50)| #cutting off extreme values for certain variables
              (Indicator=="Chloride (mg/L)"&Value<250)|
              (Indicator=="Total nitrogen (mg/L)"&Value<2.5)|
              (Indicator=="Total phosphorus (ug/L)"&Value<150)|
@@ -1257,13 +1230,13 @@ The plot below shows the distribution of the size classes and trophic classes in
 
 ```{r size bias}
 #Plotting data frame distribution as well as NYS sample distribution collected since 2010
-#LMAS numbers retrieved in 2020
+#LMAS numbers retrieved in 2020, script to do so is in Probability.Results.2021.rmd
 
 frame<-att %>% 
   select(PROB_CAT,AREA_CAT) %>% 
   rename(size_category=AREA_CAT) %>% 
   distinct() %>%
-  mutate(Probability_Sites = case_when( #statewide estimate
+  mutate(Probability_Sites = case_when( #statewide estimate from sampling design frame
     endsWith(size_category, "(1,4]") ~ ((1828/6437)*100),
     endsWith(size_category, "(4,10]") ~ ((2490/6437)*100),
     endsWith(size_category, "(10,20]") ~ ((1003/6437)*100),
@@ -1290,7 +1263,7 @@ plot <- ggplot(frame, aes(x=size_category,y=percentage,fill=study)) +
   scale_fill_grey()+
   theme(legend.position = "none")
 
-plot1 <- set_panel_size(p = plot, width = unit(6, "cm"), height = unit(4,"cm"))
+plot1 <- set_panel_size(p = plot, width = unit(6, "cm"), height = unit(4,"cm")) #save plot for later
 
 ```
 
@@ -1363,7 +1336,10 @@ plot <- ggplot(forplot, aes(x=Category,fill=study)) +
 # gridExtra::grid.arrange(plot)
 
 ```
+
 ```{r combined plot}
+
+#plot for just phosphorus trophic bias
 plot2 <- ggplot(forplot[forplot$Indicator=="Phosphorus",], aes(x=Category,fill=study,y=Estimate.P)) +
   geom_bar(stat = "identity", position = position_dodge())+
   geom_errorbar(aes(ymin=LCB95Pct.P, ymax=UCB95Pct.P), width=0.2,
@@ -1376,7 +1352,7 @@ plot2 <- ggplot(forplot[forplot$Indicator=="Phosphorus",], aes(x=Category,fill=s
 
 plot2 <- set_panel_size(p = plot2, width = unit(4, "cm"), height = unit(4,"cm"))
 
-gridExtra::grid.arrange(plot1, plot2,ncol=2)
+gridExtra::grid.arrange(plot1, plot2,ncol=2) #plot both side by side
 ```
 
 ## Session info
