@@ -153,3 +153,216 @@ exceedances<-exceedances %>% select(-seg_id) %>%
 
 #write the data frame for Sabrina to use later
 write.csv(exceedances,file="for.sabrina.probability.data.excursions.csv",row.names=FALSE)
+
+#see if all 30 lakes are in the probability data set
+junk<-newdata %>% 
+  filter(substr(SAMPLE_DATE,1,4)>2019,
+         CHARACTERISTIC_NAME=="PHOSPHORUS, TOTAL",
+         LAKE_HISTORY_ID %in% c('0902DEE0073','1302CAR0062A','0403RUS0146','0704CAN0286','1104BRA0347','1203UWB0798E','1203GLA0859',
+         '0801DAR0750','0902WHI0158','1201ECA0703A','0902SPI0264','1203DEE0911','1004NIC0314','0801SAN0436','0801MEI0420','0903UPR0239',
+         '1201KLO0708','1301CRO1033','0903SHA0324','1501GRE1026','0602STE0101','0602WHI5358','1401RIO0079A','1404RUS0410','1301CAN0168A',
+         '0601ARN0362','0301CANXXX1','1104GRE0127','1104PAR0432','0701CRO0185'))
+length(unique(junk$LAKE_HISTORY_ID))
+
+
+sites<-sites %>% select(siteID,ycoord,xcoord,LAKE_ID) %>% distinct()
+
+
+score<-analysis$CDF
+junk<-att %>% select(CHLOROPHYLL_ug_L,NITROGEN_mg_L,PHOSPHORUS_mg_L,DISSOLVED_OXYGEN_mg_L,ALKALINITY_mg_L,CHLORIDE_mg_L,Ammonia_mg_L,Arsenic_mg_L,Iron_mg_L,Magnesium_mg_L,Manganese_mg_L,Nitrate_mg_L,Nitrate_Nitrite_mg_L,Nitrite_mg_L,PH_epi,Sulfate_mg_L,Specific_conductivity_epi,Calcium_mg_L,Color,Secchi_depth) %>% distinct()
+
+
+
+#creating pdf
+probDF<-ash1_wgt(att$CHLOROPHYLL_ug_L,wgt=att$WgtAdj)
+probDF<-data.frame(x=probDF$x,y=probDF$y)
+probDF<-probDF %>% 
+  rename(CHLOROPHYLL_ug_L=x,
+         probability=y)
+library(ggplot2)
+ggplot(probDF,aes(x=CHLOROPHYLL_ug_L,y=probability))+
+  #geom_point()+
+  geom_line()
+
+
+unknown
+0301CANXXX1_DH
+2021-09-27
+open_water
+not_applicable
+chlorophyll-a-concentration_chlorophyte_green-algae
+
+
+0704CAN0286_DH
+0902DEE0073_DH
+# 1302CAR0062A_DH
+
+
+junk<-obt |> 
+  filter(SITE_CODE %in% c("0104GRE5309_DH","0701CRO0185_DH","0704CAN0286_CSL1","0902DEE0073_DH","1104BRA0347_DH","1301CRO1033_DH",
+                          "1302CAR0062A_DH"),
+         SAMPLE_LOCATION %in% c("open_water","depth_profile","secchi_depth"),
+         EVENT_DATETIME >= as.POSIXct("2020-01-01 00:00"),
+         EVENT_DATETIME <= as.POSIXct("2022-01-01 00:00"),
+         !RESULT_QUALIFIER %in% c("R", "T"),
+         SAMPLE_LAB!="SUNYESF") |> 
+  select(SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT) |> distinct()
+  
+"0104GRE5309_DH", no TP must have been rejected
+"0701CRO0185_DH", it is there but multiple days, filtering for DO and phosph will help
+"0704CAN0286_CSL1",
+"0902DEE0073_DH",
+"1104BRA0347_DH",
+# 1301CRO1033_DH", #it is there but multiple days, filtering for DO and phosph will help
+# "1302CAR0062A_DH"
+
+junk2<-df |> filter(SITE_CODE %in% c("0104GRE5309_DH","0701CRO0185_DH","0704CAN0286_CSL1","0902DEE0073_DH",
+                                     "1104BRA0347_DH","1301CRO1033_DH","1302CAR0062A_DH"))|> 
+  select(SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT) |> distinct() |> 
+  filter(PARAMETER_NAME %in% c('dissolved_oxygen','phosphorus'))
+
+junk<-df |> filter(SITE_CODE=="1302CAR0062A_DH") |> 
+  select( WIPWL,
+          WATERBODY_NAME,
+          SITE_CODE,
+          EVENT_ID,
+          REPLICATE,
+          EVENT_DATETIME,
+          SAMPLE_LOCATION,
+          FRACTION,
+          PARAMETER_NAME,
+          UNIT,
+          RESULT_VALUE,
+          QUANTITATION_LIMIT,
+          RESULT_QUALIFIER,
+          RESULT_QUALIFIER_DESCRIPTION
+  ) |> distinct()
+junk<-df |> select(EVENT_DATETIME) |> distinct() |> arrange(EVENT_DATETIME)
+
+parameters<-df |> select(PARAMETER_NAME,FRACTION) |> distinct() |> arrange(PARAMETER_NAME,FRACTION)
+
+
+# [1] "SITE_CODE"                                            "EVENT_DATETIME"                                      
+# [3] "alkalinity(total)"                                    "arsenic(total)"                                      
+# [5] "calcium(total)"                                       "chloride(total)"                                     
+# [7] "chlorophyll-a-concentration_chlorophyte_green-algae"  "chlorophyll-a-concentration_cryptophyta_cryptophytes"
+# [9] "chlorophyll-a-concentration_cyanobacteria_bluegreen"  "chlorophyll-a-concentration_dinophyta_diatoms"       
+# [11] "chlorophyll-a(total)"                                 "dissolved_organic_carbon"                            
+# [13] "dissolved_oxygen"                                     "hardness(total)"                                     
+# [15] "iron(total)"                                          "kjeldahl_nitrogen(total)"                            
+# [17] "manganese(total)"                                     "microcystin"                                         
+# [19] "nitrate-nitrite(total)"                               "ph"                                                  
+# [21] "ph_for_color_analysis"                                "phosphorus(dissolved)"                               
+# [23] "phosphorus(total)"                                    "secchi_disk_depth"                                   
+# [25] "specific_conductance"                                 "sulfate(total)"                                      
+# [27] "temperature"                                          "total_organic_carbon"                                
+# [29] "true_color(total)"                                    "dissolved_oxygen_wqs"                                
+# [31] "ph_high_wqs"                                          "ph_low_wqs"                                          
+# [33] "xcoord"                                               "ycoord"                                              
+# [35] "Eval_Status"                                          "PROB_CAT" 
+
+
+newdata |> filter(RSLT_ANALYTICAL_METHOD_ID=="bbe Fluoroprobe User Manual") |> 
+  select(CHARACTERISTIC_NAME,RSLT_RESULT_TYPE,RSLT_ANALYTICAL_METHOD_ID) |> distinct()
+obt |> filter(LAB_ANALYTICAL_METHOD=="bbe Fluoroprobe User Manual") |> 
+  select(PARAMETER_NAME,SAMPLE_SOURCE) |> distinct()
+
+junk<-df |> filter(PARAMETER_NAME=="chlorophyll-a-concentration_total") |> select(PARAMETER_NAME,SAMPLE_SOURCE) |> distinct() |> arrange(PARAMETER_NAME)
+
+#removing infrequent parameters
+parameters<-df |> select(WATERBODY_CODE,WATERBODY_NAME,EVENT_DATETIME,PARAMETER_NAME,FRACTION) |> distinct() |> 
+  mutate(year=substr(EVENT_DATETIME,1,4)) |> 
+  group_by(PARAMETER_NAME,FRACTION,year) |> 
+  summarise(n=n()) |> 
+  ungroup() |> 
+  spread(key=year,value=n)
+
+
+
+write.csv(df,file="junk.df.csv",row.names=FALSE)
+junk<-read.csv("junk.df.csv")
+
+df<-read.csv("junk.df.csv")
+dbrief<- df|> select(siteID,SITE_CODE,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct() 
+dbrief<-as_tibble(dbrief)
+
+vars <- c("phos_trophic", "chla_trophic")
+
+brief<-att |> select(siteID,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct()
+
+#analysis
+CatExtent <- cat_analysis(
+  dframe=dbrief,
+  vars=vars, 
+  subpops = , #for example could separate by area category or year
+  siteID = "siteID",
+  weight = "WgtAdj", #name will probably change in future
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+
+"0701UWB5036"
+
+
+junk<-att |> filter(chemical_name=="MICROCYSTIN_OW_NA",!is.na(result_value)) |> select(LAKE_ID,SAMPLE_DATE) |> distinct()
+
+newdata |> filter(LOCATION_HISTORY_ID=="0104GRE5309_DH",SAMPLE_DATE=="2020-09-30",CHARACTERISTIC_NAME=="MICROCYSTIN") |> 
+  select(LOCATION_HISTORY_ID,INFORMATION_TYPE,RSLT_RESULT_VALUE,RSLT_RESULT_SAMPLE_FRACTION,RSLT_VALIDATOR_QUALIFIER) |> distinct()
+
+rmarkdown::render("2024.09.Probability.Sampling.BASE_onion.Rmd")
+
+read.csv("junk.chla.albany.csv")
+
+chl<-chl |> 
+  mutate(datetime=gsub("\\ .*","",datetime)) |> 
+  mutate(datetime=as.Date(datetime,format="%m/%d/%Y"))
+
+ggplot( chl 
+        # |> mutate(value=log(value))
+          ,aes(x=datetime,y=value)) +
+  geom_point()+
+  labs(title="Microcystin Detection",y="chl a")
+  
+  +
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+
+obt |> 
+  filter(WATERBODY_TYPE == "lake",!is.na(RESULT_VALUE)|!is.na(RESULT_QUALIFIER),
+         PARAMETER_NAME=="sodium") |> 
+  mutate(year=substr(EVENT_DATETIME,1,4)) |> 
+  select(year) |> distinct() |> arrange(year)
+
+junk<-obt |> 
+  filter(
+         WATERBODY_TYPE!="lake",
+        # SAMPLE_ORGANIZATION %in% c('Citizens Statewide Lake Assessment Program (CSLAP)','CSLAP'),
+         PUBLIC_WATER_SUPPLY=="TRUE") |> 
+  select(WATERBODY_CODE,WATERBODY_NAME,SITE_CODE,WATERBODY_TYPE) |> distinct()
+
+
+df |> 
+  filter(PARAMETER_NAME=="dissolved_organic_carbon") |> 
+  mutate(year=substr(EVENT_DATETIME,1,4)) |> 
+  select(year,PARAMETER_NAME,UNIT) |> 
+  distinct() |> arrange(desc(year))
+
+
+obt |> filter(WATERBODY_TYPE!="lake",PARAMETER_NAME=="specific_conductance") |> select(PARAMETER_NAME,UNIT) |> distinct()
+
+
+obt |> select(WATERBODY_NAME,WIPWL,MUNICIPALITY,COUNTY,BASIN_NAME)
+
+obt |> filter(WATERBODY_CODE=="0705SEN0369") |> select(WIPWL,SITE_DESCRIPTION) |> distinct()
+
+obt |> filter(WATERBODY_CODE=="1203THE0850A",
+              PARAMETER_NAME=="true_color") |> 
+  select(EVENT_DATETIME,RESULT_VALUE,METHOD_DETECTION_LIMIT,RESULT_QUALIFIER) |> 
+  distinct() 
+junk<-obt |> filter(WATERBODY_CODE=="1202UWB0579") |> 
+  select(PARAMETER_NAME) |> distinct() |> 
+  arrange(PARAMETER_NAME)
+ 
+obt |> filter(WATERBODY_CODE=="1202UWB0579",
+              PARAMETER_NAME=="phosphorus") |> 
+  select(EVENT_DATETIME,RESULT_VALUE,METHOD_DETECTION_LIMIT,RESULT_QUALIFIER,SAMPLE_LOCATION) |> 
+  distinct() 

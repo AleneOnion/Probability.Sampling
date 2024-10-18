@@ -1,0 +1,1380 @@
+---
+title: "Probability Base"
+author: "Alene Onion"
+date:  "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# Probability analysis
+
+## Load packages
+
+```{r packages}
+
+library(tidyverse)
+library(huxtable)
+library(ggplot2)
+library(lubridate)
+library(ggbreak) 
+library(spsurvey) #This code was written for spsurvey v5.0.0
+
+```
+
+## Load data
+
+To run cat_analysis(), the dataframe will need to include columns for the categorical variable you are interested in, weight for each site, xcoordinate and ycoordinate. Optionally, you can also include a subpopulation or stratum column to separate results and site IDs for two-stage analysis (for example, if there are repeated sites).
+
+In this script, weight is adjusted because of the proportional design. In the future, this can be excluded as the design should include weights already.
+
+Epilimnetic values are used to compare across lake types. Dissolved oxygen and ph values are synthesized by the stay calm package to represent a single value for an event.
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+library(arrow)
+library(tidyverse)
+library(ggplot2)
+
+ # obt_dir <- file.path("L:",
+ #                      "DOW",
+ #                      "BWAM Share",
+ #                      "data",
+ #                      "dev",
+ #                      "parquet",
+ #                      "obt_result.parquet")
+ # obt <- open_dataset(obt_dir) |>
+ # collect()
+
+#reference for parameter names
+# library(dm)
+# con <- nexus::get_connected(username = "AONION") #pass: 2932076Alan3456
+# data_model <- nexus::get_data_model(con = con,
+#                                     schema = "WQMA_OWNER")
+# dictionary <- nexus::get_data_dictionary(con = con)
+
+rm(list=setdiff(ls(), c("obt","newdata","dictionary")))
+
+
+```
+
+
+
+
+```{r pull data, echo=FALSE, message=FALSE, warning=FALSE}
+# read in site data
+sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
+sites<-sites %>% 
+  mutate(SITE_CODE=gsub("^$|^ $", NA, LAKE_ID)) |> 
+  mutate(SITE_CODE=ifelse(!is.na(SITE_CODE),paste(SITE_CODE,"_DH",sep=""),NA)) |> 
+  mutate(SITE_CODE=ifelse(SITE_CODE=="0704CAN0286_DH","0704CAN0286_CSL1",SITE_CODE)) |> 
+  rename(siteID=SITE_ID,
+         xcoord=LON_DD83,
+         ycoord=LAT_DD83,
+         Eval_Status=EvalStatus) %>% 
+  filter(Eval_Status!="") %>%    #removing sites that we haven't yet evaluated
+  mutate(Eval_Status=trimws(Eval_Status))
+
+df<-obt |> 
+  #convert true color flags to A
+  mutate(RESULT_QUALIFIER=ifelse(PARAMETER_NAME=="true_color","A",RESULT_QUALIFIER)) |> 
+  filter(
+    SAMPLE_LOCATION %in% c("open_water","depth_profile","secchi_depth"),
+    SITE_CODE %in% unique(sites$SITE_CODE),
+    WATERBODY_TYPE == "lake",
+    EVENT_DATETIME >= as.POSIXct("2020-01-01 00:00"),
+    EVENT_DATETIME <= as.POSIXct("2022-01-01 00:00"),
+    #remove rejected data
+    !RESULT_QUALIFIER %in% c("R", "T"),
+    SAMPLE_LAB!="SUNYESF"
+    ) |> 
+  #simplify date and convert non-detect to 0
+  mutate(EVENT_DATETIME=as.Date(as.POSIXct(EVENT_DATETIME), tz = ""),
+         RESULT_VALUE=ifelse(grepl("U",RESULT_QUALIFIER),0,RESULT_VALUE),
+           RESULT_VALUE=ifelse(is.na(RESULT_VALUE),0,RESULT_VALUE)) |> 
+  #convert two dates sampled by CSLAP and LCI to the same artificially
+  mutate(EVENT_DATETIME=as.Date(ifelse(EVENT_DATETIME == "2021-09-13"&SITE_CODE=="0704CAN0286_CSL1",as.character("2021-09-19"),as.character(EVENT_DATETIME))))
+
+
+#remove these depth profile parameters because they are redundant or we have no thresholds to compare them to
+df<-df |> 
+  filter(!(SAMPLE_LOCATION=="depth_profile"&
+             PARAMETER_NAME %in% c("chlorophyll-a","dissolved_oxygen_saturation","oxidation_reduction_potential","phycocyanin"))) |>
+  distinct()
+# #convert these depth profile to a single epilimnetic value 
+df<-df |>
+  group_by(WATERBODY_CODE,WATERBODY_NAME,EVENT_DATETIME,PARAMETER_NAME,FRACTION) |>
+  mutate(depth=min(abs(SAMPLE_DEPTH_METERS - 1.5)),na.rm=TRUE) |>
+  ungroup() |> 
+  filter(case_when(PARAMETER_NAME %in% c("specific_conductance","temperature") ~ depth==(abs(SAMPLE_DEPTH_METERS - 1.5)),
+                   TRUE ~ PARAMETER_NAME != "junk")) |> 
+  select(-depth)
+
+#simplify data set
+df<-df |> 
+  select( WIPWL,
+    SITE_CODE,
+    EVENT_ID,
+    REPLICATE,
+    EVENT_DATETIME,
+    SAMPLE_LOCATION,
+    SAMPLE_SOURCE,
+    SAMPLE_ORGANIZATION,
+    SAMPLE_DEPTH_METERS,
+    SAMPLE_METHOD,
+    FRACTION,
+    PARAMETER_NAME,
+    METHOD_SPECIATION,
+    UNIT,
+    RESULT_VALUE,
+    QUANTITATION_LIMIT,
+    RESULT_QUALIFIER,
+    RESULT_QUALIFIER_DESCRIPTION
+  ) |> distinct()
+
+#randomly restricted to one sample per parameter/lake. These parameters were not necessarily collected on the same day
+set.seed(1)
+events<-df |> 
+  select(SITE_CODE,EVENT_DATETIME,PARAMETER_NAME) |> distinct() |> 
+  group_by(SITE_CODE,PARAMETER_NAME) |> 
+  slice_sample(n=1) |> 
+  ungroup() 
+df<-merge(events,df,by=c('SITE_CODE','EVENT_DATETIME','PARAMETER_NAME'),all.x=TRUE)
+
+
+
+```
+
+
+```{r WQS, echo=FALSE, message=FALSE, warning=FALSE}
+# Load NYSDEC WQS 
+data("nysdec_wqs", package = "stayCALM")
+
+wqs<-df |> 
+  filter(
+    PARAMETER_NAME %in% c("chlorophyll-a","dissolved_oxygen","ph","phosphorus","temperature"),
+    !(FRACTION %in% c("dissolved", "unknown") &
+      PARAMETER_NAME %in% "phosphorus"),
+    !(UNIT %in% c("rfu", "RFU") & PARAMETER_NAME %in% c("chlorophyll_a", "chlorophyll-a"))) |> 
+  select(
+    seg_id = WIPWL,
+    site_id = SITE_CODE,
+    sample_id = EVENT_ID,
+    replicate = REPLICATE,
+    date = EVENT_DATETIME,
+    info_type = SAMPLE_LOCATION,
+    result_type = SAMPLE_SOURCE,
+    data_provider = SAMPLE_ORGANIZATION,
+    depth = SAMPLE_DEPTH_METERS,
+    sample_method = SAMPLE_METHOD,
+    fraction = FRACTION,
+    parameter = PARAMETER_NAME,
+    method_speciation = METHOD_SPECIATION,
+    units = UNIT,
+    value = RESULT_VALUE,
+    quantitation_limit = QUANTITATION_LIMIT,
+    validator_qualifiers = RESULT_QUALIFIER,
+    interpreted_qualifiers = RESULT_QUALIFIER_DESCRIPTION
+  ) |> distinct() |> 
+  mutate(
+    info_type = dplyr::na_if(info_type, "unknown"),
+    # modify parameter names to match the names in the stayCALM WQS table.
+    parameter = dplyr::case_match(
+      .x = parameter,
+      "chlorophyll-a" ~ "chlorophyll_a",
+      "fecal_coliform" ~ "fecal_coliforms",
+      "phenolics" ~ "phenols",
+      "bioassessment_profile" ~ "bap",
+      "temperature_of_epilimnion" ~ "temperature",
+      "temperature_of_hypolimnion" ~ "temperature",
+      .default = parameter
+    ),
+    parameter = dplyr::case_when(
+      grepl("multiplate", sample_method) ~ "bap_multiplate",
+      grepl("kick", sample_method) ~ "bap_kick",
+      grepl("ponar", sample_method) ~ "bap_ponar",
+      .default = parameter
+    ),
+    units = tolower(units),
+    value = case_when(
+      # To ug/l from mg/l
+      fraction %in% "total" &
+        units %in% "mg/l" &
+        parameter %in% c("ammonia",
+                         "chloride",
+                         "fluoride",
+                         "nitrate",
+                         "nitrite",
+                         "phosphorus",
+                         "sulfate") ~ value * 1000,
+      # To ug/l from ng/l or ppt
+      fraction %in% "total" &
+        units %in% c("ng/l",
+                     "ppt") &
+        parameter %in% "mercury" ~ value * 1000,
+      # To mg/l from ug/l
+      fraction %in% "dissolved" &
+        units %in% "ug/l" &
+        parameter %in% "total_dissolved_solids" ~ value / 1000,
+      fraction %in% "total" &
+        units %in% "ug/l" &
+        parameter %in% "hardness" ~ value / 1000,
+      .default = value
+    ),
+    units = dplyr::case_when(
+      grepl("bap_", parameter) ~ "bap_units",
+      units %in% "ph units" ~ "ph_units",
+      # To ug/l from mg/l
+      fraction %in% "total" &
+        units %in% "mg/l" &
+        parameter %in% c("ammonia",
+                         "chloride",
+                         "fluoride",
+                         "nitrate",
+                         "nitrite",
+                         "phosphorus",
+                         "sulfate") ~ "ug/l",
+      # To ug/l from ng/l or ppt
+      fraction %in% "total" &
+        units %in% c("ng/l",
+                     "ppt") &
+        parameter %in% "mercury" ~ "ug/l",
+      # To mg/l from ug/l
+      fraction %in% "dissolved" &
+        units %in% "ug/l" &
+        parameter %in% "total_dissolved_solids" ~ "mg/l",
+      fraction %in% "total" &
+        units %in% "ug/l" &
+        parameter %in% "hardness" ~ "mg/l",
+      .default = units
+    ),
+    fraction = dplyr::case_when(
+      parameter %in% "chlorophyll_a" ~ "total",
+      parameter %in% "dissolved_oxygen" ~ "dissolved",
+      parameter %in% c("fecal_coliforms", "ph") ~ "total",
+      parameter %in% "phenols" & fraction %in% "total_recoverable" ~ "total",
+      # Replace "not_applicable" with "none"-- stayCALM's standard.
+      fraction %in% "not_applicable" ~ "none",
+
+      .default = fraction
+    ),
+    method_speciation = dplyr::case_when(
+      method_speciation %in% "as_n" ~ "as n",
+      parameter %in% c("phosphorus", "sulfate") ~ "none",
+      # Replace "not_applicable" with "none"-- stayCALM's standard.
+      method_speciation %in% "not_applicable" ~ "none",
+      .default = method_speciation
+    ))
+
+#fixes
+wqs<-wqs |> 
+  mutate(info_type=ifelse(info_type=="open_water","ow","dp"))
+
+#identify new waterbodies not on the WIPWL
+new_wipwl<-wqs |> 
+  filter(seg_id=="unknown") |> 
+  mutate(seg_id=paste(substr(site_id,1,4),"-9999",sep=""),
+         class="c",
+         water_type="Lake/Reservoir",
+         wbcatgry="Unassessed",
+         x305b_code="3") |> 
+  select(seg_id,class,water_type,wbcatgry,x305b_code) |> distinct()
+#convert unknown WIPWL to location id
+wqs<-wqs |> 
+  mutate(seg_id=ifelse(seg_id=="unknown",paste(substr(site_id,1,4),"-9999",sep=""),seg_id))
+#modify the wipwl_df to include these fake WIPWL
+fake_wipwl<-stayCALM::wipwl_df
+fake_wipwl<-merge(new_wipwl,fake_wipwl,by=c('seg_id','class','water_type','wbcatgry','x305b_code'),all=TRUE)
+
+#pulling excursion data
+lake_wqs<-stayCALM::wqs_violations(
+  .data = wqs,
+  .period = stayCALM::gen_10_year_period(end_date = "2024-01-01"),
+  .targeted_assessment = TRUE,
+  .wipwl_df = fake_wipwl,
+  .wqs_df = stayCALM::nysdec_wqs,
+  .tmdl_df = stayCALM::tmdl_df
+)
+
+
+# Create a data frame of Lake and Reservoir WI/PWL assessments.
+lake_wqs <- lake_wqs$violation_data |>
+  dplyr::distinct() |>
+  dplyr::filter(water_type %in% "Lake/Reservoir") |> 
+#filter to only fishing use since that applies to all lakes
+  dplyr::filter(use=="fishing")
+
+#reformat to match df frame
+lake_wqs<-lake_wqs |> 
+  mutate(seg_id=ifelse(substr(seg_id,6,9)=="9999","unknown",seg_id)) |> 
+  #removing 6 DO threshold because requires a mean
+  filter(!(parameter=="dissolved_oxygen"&statistic=="mean")) |> 
+  #convert ph parameter name to reflect the threshold
+  mutate(parameter=ifelse(parameter=='ph'&threshold=="6.5","ph_low",ifelse(parameter=="ph"&threshold=="8.5","ph_high",parameter))) |> 
+  mutate(
+    WIPWL=seg_id,
+    SITE_CODE=site_id,
+    EVENT_DATETIME=date,
+    SAMPLE_LOCATION="depth_profile",
+    FRACTION="not_applicable",
+    PARAMETER_NAME=parameter,
+    UNIT=units,
+    RESULT_VALUE=result
+  ) |> 
+  select(WIPWL,SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT,RESULT_VALUE,attaining_wqs) |> distinct()
+
+```
+
+Parameters were removed if there were fewer than 30 sites sampled.
+
+```{r adding wqs to df, echo=FALSE, message=FALSE, warning=FALSE}
+#simplify df now that done with STAY:CALM
+df<-df |> 
+  select(WIPWL,SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT,RESULT_VALUE) |> distinct() |> 
+  #restrict to one sample per parameter/site
+  group_by(SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,PARAMETER_NAME,FRACTION) |> 
+  slice_sample(n=1) |> 
+  ungroup()
+
+#remove dissolved oxygen and ph values so can add in the stay calm calculations
+df<-df |> 
+  filter(!(PARAMETER_NAME %in% c('ph','dissolved_oxygen')))
+df<-merge(df,lake_wqs,all=TRUE)
+
+#test for duplicates
+# junk<-lake_wqs |> group_by(SITE_CODE,PARAMETER_NAME) |> summarise(n=n()) |> ungroup() |> filter(n>1)
+
+#add fraction to the parameter name
+df<-df |> 
+  mutate(PARAMETER_NAME=ifelse(FRACTION=="not_applicable",PARAMETER_NAME,paste(PARAMETER_NAME,"(",FRACTION,")",sep="")),
+         PARAMETER_NAME=ifelse(PARAMETER_NAME=="dissolved_organic_carbon(dissolved)","dissolved_organic_carbon",PARAMETER_NAME),
+         PARAMETER_NAME=ifelse(PARAMETER_NAME=="total_organic_carbon(total)","total_organic_carbon",PARAMETER_NAME)) |> 
+  select(-FRACTION)
+
+#save parameter list
+parameters<-df |> select(PARAMETER_NAME) |> distinct() |> arrange(PARAMETER_NAME)
+
+#spread data
+df_num<-df %>% 
+  mutate(PARAMETER_NAME=ifelse(PARAMETER_NAME %in% c('ph_low','ph_high'),'ph',PARAMETER_NAME)) |> 
+  select(SITE_CODE,EVENT_DATETIME,PARAMETER_NAME,RESULT_VALUE) |> distinct() |> 
+  spread(PARAMETER_NAME,RESULT_VALUE,fill = NA)
+
+#calculate total nitrogen if not done already
+df_num<-df_num |> 
+  mutate(`nitrogen(total)`=ifelse(!is.na(`kjeldahl_nitrogen(total)`),
+                                  (`nitrate-nitrite(total)`+`kjeldahl_nitrogen(total)`),
+                                  `nitrogen(total)`))
+
+#parameters with less than 30 samples because that's insufficient samples to run the analysis
+parameters<-df_num |> 
+  pivot_longer(cols=-c(SITE_CODE,EVENT_DATETIME),names_to = "PARAMETER_NAME",values_to="result") |> 
+  filter(!is.na(result)) |> 
+  group_by(PARAMETER_NAME) |> 
+  summarise(n=n()) |> 
+  ungroup() 
+remove_parameters<-parameters |> 
+  filter(n<30)  |> distinct()
+print(paste("removing these parameters because there are fewer than 30 sites sampled: ",remove_parameters$PARAMETER_NAME,sep=","))
+df_num<-df_num |> 
+  select(!(one_of(remove_parameters$PARAMETER_NAME)))
+
+
+#spread the categorical data
+df_cat<-df |> 
+  filter(!is.na(attaining_wqs)) |> 
+  mutate(PARAMETER_NAME=paste(PARAMETER_NAME,"_wqs",sep="")) |> 
+  select(SITE_CODE,EVENT_DATETIME,PARAMETER_NAME,attaining_wqs) |> distinct() |> 
+  spread(PARAMETER_NAME,attaining_wqs,fill = NA)
+#merge back together
+df<-merge(df_num,df_cat,all=TRUE)
+
+
+
+###add back in eval status from sites
+sites_df<-sites |> 
+  select(SITE_CODE,siteID,xcoord,ycoord,Eval_Status,PROB_CAT) |> distinct()
+df<-merge(df,sites_df,by=c('SITE_CODE'),all = TRUE)
+
+ # rm(list=setdiff(ls(), c("obt","newdata","dictionary",'df','parameters')))
+
+```
+
+```{r adding thresholds, echo=FALSE, message=FALSE, warning=FALSE}
+#contextualizing categories
+# Zebra Mussel Vulnerability (calcium)
+# Nutrients (TOC,DOC,TKN,TP diss, TN)
+# Browning (DOC, True Color)
+# Trohic State (TP,Chla,secchi_trophic)
+# Salt (Chloride, sp cond, sodium)
+# Buffering Capacity (alkalinity)
+# Water Quality Standards categories
+
+# EPA NLA:
+# Trophic state
+# Biological indicator: chl a
+# Nutrients: TP, N…
+# HABs
+
+
+#creating thresholds
+df<-df |> 
+  # CAN'T do because nitrate only collected in half the samples DIN:TP
+  # mutate(DINTP=ifelse(!is.na()&!is.na(),`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`phosphorus(total)`) %>% 
+  # trophic status
+  mutate(phos_trophic=case_when(
+    `phosphorus(total)`<=0.01 ~ "oligotrophic",
+    between(`phosphorus(total)`,0.01,0.02) ~ "mesotrophic",
+    `phosphorus(total)`>=0.02 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    `chlorophyll-a(total)`<=2 ~ "oligotrophic",
+    between(`chlorophyll-a(total)`,2,8) ~ "mesotrophic",
+    `chlorophyll-a(total)`>=8 ~ "eutrophic")) %>%
+  # EPA thresholds
+  mutate(`phosphorus_nla`=case_when(
+    `phosphorus(total)`<=0.016 ~ "Good",
+    between(`phosphorus(total)`, 0.016, 0.0279) ~ "Fair",
+    `phosphorus(total)`>=0.0279 ~ "Poor")) %>%
+  mutate(`nitrogen_nla`=case_when(
+    `nitrogen(total)`<=0.428 ~ "Good",
+    between(`nitrogen(total)`, 0.428, 0.655) ~ "Fair",
+    `nitrogen(total)`>=0.655 ~ "Poor")) %>%
+  mutate(`chlorophylla_nla`=case_when(
+    `chlorophyll-a(total)`<=4.52 ~ "Good",
+    between(`chlorophyll-a(total)`, 4.52, 8.43) ~ "Fair",
+    `chlorophyll-a(total)`>=8.43 ~ "Poor")) %>%
+  # microcystin
+  mutate(microcystin=case_when(
+    is.na(microcystin) ~"Non-detect",
+    microcystin<8 ~ "Microcystin Detected",
+    microcystin>=8 ~ "Most disturbed")) %>%
+  # dissolved oxygen
+  mutate(dissolved_oxygen_nla=case_when(
+    dissolved_oxygen<=3 ~ "Poor",
+    between(dissolved_oxygen, 3, 5) ~ "Fair",
+    dissolved_oxygen>=5 ~ "Good")) %>% 
+  #nutrient limitation
+  mutate(nutrient_limitation=case_when(
+    `nitrogen(total)`/`phosphorus(total)`<=10 ~ "N-limited",
+    between(`nitrogen(total)`/`phosphorus(total)`, 10, 20) ~ "Co-limited",
+    `nitrogen(total)`/`phosphorus(total)`>=20 ~ "P-limited")) %>% 
+  #secchi
+  mutate(secchi_trophic=case_when(
+    secchi_disk_depth<=2 ~ "eutrophic",
+    between(secchi_disk_depth, 2, 5) ~ "mesotrophic",
+    secchi_disk_depth>=5 ~ "oligotrophic")) %>% 
+  #zebra mussels
+  mutate(zebra_mussel_vulnerability=case_when(
+    `calcium(total)`<=10 ~ "Not susceptible",
+    between(`calcium(total)`, 10, 20) ~ "May be susceptible",
+    `calcium(total)`>=20 ~ "Highly susceptible")) %>% 
+  #cslap
+  mutate(conductance=case_when(
+    specific_conductance<=125 ~ "Soft",
+    between(specific_conductance, 125, 250) ~ "Average",
+    specific_conductance>=250 ~ "Hard")) %>%
+  mutate(color=case_when(
+    `true_color(total)`<=10 ~ "Uncolored",
+    between(`true_color(total)`, 10, 30) ~ "Weak",
+    `true_color(total)`>=30 ~ "High")) %>% 
+  mutate(ph_cat=case_when(
+    ph<=6.5 ~ "Acidic",
+    between(ph, 6.5, 7.5) ~ "Neutral",
+    between(ph, 7.5, 8.5) ~ "Slightly alk",
+    ph>=8.5 ~ "Highly alk")) %>% 
+  #Nutrient_Color_Status
+  mutate(Nutrient_Color_Status=case_when(
+    `phosphorus(total)`<=0.030 & `true_color(total)`<=20 ~ "Blue",
+    `phosphorus(total)`>0.030 & `true_color(total)`<=20 ~ "Green",
+    `phosphorus(total)`<=0.030 & `true_color(total)`>20 ~ "Brown",
+    `phosphorus(total)`>0.030 & `true_color(total)`>20 ~ "Murky"
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    `chloride(total)` <= 35 ~ "Low",
+    between(`chloride(total)`,35,250) ~ "Medium",
+    `chloride(total)` >= 250 ~ "High")) %>% 
+  #chlorophyll
+    #Can't use these because there was no chlorophyll-a-concentration_total reported from UFI for these sites in 2021. I don't know why
+  # rename(chlorophyte=`chlorophyll-a-concentration_chlorophyte_green-algae`,
+  #        cryptophyta=`chlorophyll-a-concentration_cryptophyta_cryptophytes`,
+  #        cyanobacteria=`chlorophyll-a-concentration_cyanobacteria_bluegreen`,
+  #        diatoms=`chlorophyll-a-concentration_dinophyta_diatoms`,
+  #        probe_total=`chlorophyll-a-concentration_total`) %>% 
+  # mutate(chlorophyte=case_when(
+  #   chlorophyte/probe_total<=0.25 ~ "Low",
+  #   between(chlorophyte/probe_total,0.25,0.5) ~ "Medium",
+  #   chlorophyte/probe_total>=0.5 ~ "High")) %>% 
+  # mutate(cryptophyta=case_when(
+  #   cryptophyta/probe_total<=0.25 ~ "Low",
+  #   between(cryptophyta/probe_total,0.25,0.5) ~ "Medium",
+  #   cryptophyta/probe_total>=0.5 ~ "High")) %>% 
+  # mutate(cyanobacteria=case_when(
+  #   cyanobacteria/probe_total<=0.25 ~ "Low",
+  #   between(cyanobacteria/probe_total,0.25,0.5) ~ "Medium",
+  #   cyanobacteria/probe_total>=0.5 ~ "High")) %>% 
+  # mutate(dinophyta=case_when(
+  #   diatoms/probe_total<=0.25 ~ "Low",
+  #   between(diatoms/probe_total,0.25,0.5) ~ "Medium",
+  #   diatoms/probe_total>=0.5 ~ "High")) %>% 
+  #alkalinity
+  mutate(alkalinity=case_when(
+    `alkalinity(total)` <= 60 ~ "Soft",
+    between(`alkalinity(total)`,60,120) ~ "Moderate",
+    between(`alkalinity(total)`,120,180) ~ "Hard",
+    `alkalinity(total)` >= 180 ~ "Very hard"))
+  #WQS dissolved oxygen and ph are already categorical
+
+  
+
+# Create a Target/NonTarget status variable
+df<-df %>% 
+  mutate(statusTNT="Target",
+         statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
+df<-df %>% 
+  ungroup() %>% 
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/20),
+         PROB_CAT==">50"~(500/33)))
+
+# rm(list=setdiff(ls(), c('newdata',"df","sites","obt")))
+
+#convert to a tibble
+df<-as_tibble(df)
+
+```
+
+Additionally, I will load in NLA, NAP and NH data:
+
+```{r NLA/NAP data,echo=FALSE, message=FALSE, warning=FALSE}
+
+# read in NLA data
+chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
+
+chem <- chem %>% 
+  filter(ANALYTE %in% c("NTL","CHLA","PTL","NITRATE_N","COLOR","CHLORIDE"),
+         NARS_FLAG == "") %>% 
+  select(UID,SITE_ID,DATE_COL,ANALYTE,RESULT) %>% 
+  pivot_wider(names_from= ANALYTE ,values_from = RESULT,) %>% 
+  rename(TN=NTL,TP=PTL)
+
+oxygen <- read.csv("nla_2017_profile-data.csv")
+
+oxygen <- oxygen %>% 
+  select(UID,SITE_ID,DATE_COL,DEPTH,OXYGEN) %>% 
+  # dissolved oxygen:
+  # keep DO values between 0 and 2m depth
+  mutate(keep=case_when(
+    DEPTH <= 2 ~ "yes",
+    DEPTH > 2 ~ "no")) %>%
+  filter(keep=="yes") %>%
+  select(-keep)
+
+# mean DO for each lake
+DO <- aggregate(oxygen$OXYGEN,list(oxygen$SITE_ID,oxygen$DATE_COL),FUN=mean)
+# add back in
+oxygen <- merge(oxygen,DO,by.x=c("SITE_ID","DATE_COL"),by.y=c("Group.1","Group.2"),all.x=TRUE)
+oxygen$x <- as.numeric(oxygen$x)
+oxygen <- oxygen %>% 
+  select(-c(DEPTH,OXYGEN)) %>%
+  rename(OXYGEN=x) %>% 
+  distinct()
+
+att.nla <- merge(chem,oxygen,by=c("UID","SITE_ID","DATE_COL"),all.y=TRUE,all.x=TRUE)
+att.nla$CHLA <- as.numeric(att.nla$CHLA)
+att.nla$TN <- as.numeric(att.nla$TN)
+att.nla$TP <- as.numeric(att.nla$TP)
+att.nla$CHLORIDE <- as.numeric(att.nla$CHLORIDE)
+att.nla$OXYGEN <- as.numeric(att.nla$OXYGEN)
+att.nla$COLOR <- as.numeric(att.nla$COLOR)
+att.nla$DINTP <- as.numeric(att.nla$NITRATE_N)/(as.numeric(att.nla$TP)/1000)
+  
+# selecting parameters and adding trophic status
+
+att.nla<-att.nla %>% 
+  # trophic status
+  mutate(phos_trophic=case_when(
+    TP<=10 ~ "oligotrophic",
+    between(TP,10,20) ~ "mesotrophic",
+    TP>=20 ~ "eutrophic")) %>%
+  mutate(chla_trophic=case_when(
+    CHLA<=2 ~ "oligotrophic",
+    between(CHLA,2,8) ~ "mesotrophic",
+    CHLA>=8 ~ "eutrophic")) %>%
+  # EPA thresholds
+  mutate(`phosphorus_nla`=case_when(
+    TP<=16 ~ "Good",
+    between(TP, 16, 27.9) ~ "Fair",
+    TP>=27.9 ~ "Poor")) %>%
+  mutate(`nitrogen_nla`=case_when(
+    TN<=0.428 ~ "Good",
+    between(TN, 0.428, 0.655) ~ "Fair",
+    TN>=0.655 ~ "Poor")) %>%
+  mutate(`chlorophylla_nla`=case_when(
+    CHLA<=4.52 ~ "Good",
+    between(CHLA, 4.52, 8.43) ~ "Fair",
+    CHLA>=8.43 ~ "Poor")) %>%
+  # dissolved oxygen
+  mutate(dissolved_oxygen_nla=case_when(
+    OXYGEN<=3 ~ "Poor",
+    between(OXYGEN, 3, 5) ~ "Fair",
+    OXYGEN>=5 ~ "Good")) %>% 
+  #Nutrient_Color_Status
+  mutate(Nutrient_Color_Status=case_when(
+    TP<=30 & COLOR<=20 ~ "Blue",
+    TP>30 & COLOR<=20 ~ "Green",
+    TP<=30 & COLOR>20 ~ "Brown",
+    TP>30 & COLOR>20 ~ "Murky"
+  )) %>% 
+  #chloride
+  mutate(chloride=case_when(
+    CHLORIDE <= 35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE >= 250 ~ "High"))
+
+sites <- read.csv("nla_2017_site_information-data.csv")
+
+nap.sites <- sites %>% 
+  mutate(include=case_when(
+    AG_ECO9=="NAP" & AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
+
+nla.sites <- sites %>% 
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"
+  )) %>% 
+  select(UID,SITE_ID,AREA_CAT6,EVAL_CAT,YCOORD,XCOORD,WGT_TP_EXTENT,include) %>% 
+  filter(WGT_TP_EXTENT != 0)
+
+nla.att <- merge(att.nla,nla.sites,by=c("UID","SITE_ID"))
+nap.att <- merge(att.nla,nap.sites,by=c("UID","SITE_ID"))
+
+```
+
+```{r NH data,echo=FALSE, message=FALSE, warning=FALSE}
+
+nh.att <- read.csv("New_Hampshire_Lakes_2017_Design_Status_20211027_KH_EPA.csv", na.strings=c(""," ","NA"))
+
+# selecting parameters and adding trophic status
+
+nh.att<-nh.att %>% 
+  mutate(include=case_when(
+    AREA_HA>2.63 ~ "yes",
+    SITE_ID=TRUE ~ "no"))
+
+chem <- read.csv("BasicNHChem_ForNY.csv")
+
+#merge
+
+nh.att <- merge(nh.att,chem,by.x="SITE_ID",by.y="NLA.ID",all.x=T) %>% 
+  mutate(CHLORIDE=case_when(
+    CHLORIDE!="<3" ~ as.numeric(CHLORIDE),
+    CHLORIDE=="<3" ~ 0)) %>% 
+  mutate(CHLORIDE_threshold=case_when(
+    CHLORIDE<=35 ~ "Low",
+    between(CHLORIDE,35,250) ~ "Medium",
+    CHLORIDE>=250 ~ "High"
+  ))
+
+```
+
+## Categorical Variable Analysis
+
+Here I perform the analysis using cat_analysis(). The relevant categorical variable / threshold should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe.
+
+```{r cat analysis,echo=FALSE, message=FALSE, warning=FALSE}
+
+#list variables you are interested in and defined above
+vars <- c("phos_trophic", "chla_trophic", "phosphorus_nla", "nitrogen_nla", "chlorophylla_nla", "microcystin", "dissolved_oxygen_nla", "nutrient_limitation", "secchi_trophic", "zebra_mussel_vulnerability", "conductance", "color", "ph_cat", "Nutrient_Color_Status", "chloride","alkalinity","dissolved_oxygen_wqs","ph_high_wqs","ph_low_wqs")
+          #removing the fluoroprobe data because wasn't reported by UFI in 2021: "chlorophyte","cryptophyta","cyanobacteria","dinophyta")
+#analysis
+CatExtent <- cat_analysis(
+  dframe=df,
+  vars=vars, 
+  subpops = , #for example could separate by area category or year
+  siteID = "siteID",
+  weight = "WgtAdj", 
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+#errorprnt()  #use if there is an error
+
+table <- CatExtent %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  filter(Category!="Total") %>% 
+  mutate(Category=factor(Category, levels=c("Poor","Fair","Good",
+                                            "Blue","Green","Brown","Murky",
+                                            "High","Weak","Uncolored",
+                                            "Medium","Low",
+                                            "Acidic","Neutral","Slightly alk","Highly alk",
+                                            "Soft","Moderate","Average","Hard","Very hard",
+                                            "Highly susceptible","May be susceptible","Not susceptible",
+                                            "eutrophic","mesotrophic","oligotrophic",
+                                            "N-limited","Co-limited","P-limited",
+                                            "Non-detect","Microcystin Detected","Most disturbed",
+                                            "yes","no")))
+
+hux <- as_hux(table) #I use huxtable because kable doesn't work on my computer but that is also fine 
+number_format(hux) <- 2
+theme_plain(hux)
+
+ny.cat <- table %>% filter(Indicator %in% c("phos_trophic","Total nitrogen","Total chlorophyll","Dissolved oxygen","Chloride")) %>% mutate(Study="NY")
+
+```
+
+## Continuous Variable Analysis
+
+Here I perform the analysis using cont_analysis(). The relevant CONTINUOUS variable should be input as the "vars" argument. "vars" can be a list of all categories you are interested in, which would create a very big dataframe with all. The output of this function is a list with 3 estimations: cumulative distribution function (CDF), percentiles, and means.
+
+```{r cont analysis}
+
+#To conduct analysis on a continuous variable, using a new list of CONTINUOUS variables, also note that cont_analysis() doesn't like variable names that have spaces so you will need to rename these. It's helpful to put the units in the name.
+
+df <- df %>% rename("CHLOROPHYLL_ug_L"=`chlorophyll-a(total)`,
+                      "NITROGEN_mg_L"=`nitrogen(total)`,
+                      "PHOSPHORUS_mg_L"=`phosphorus(total)`,
+                      "DISSOLVED_OXYGEN_mg_L"=dissolved_oxygen,
+                      "ALKALINITY_mg_L"=`alkalinity(total)`,
+                      "CHLORIDE_mg_L"=`chloride(total)`,
+                      "Ammonia_mg_L"=`ammonia(total)`,
+                      "Arsenic_ug_L"=`arsenic(total)`,
+                      "Iron_ug_L"=`iron(total)`,
+                      #"Magnesium_ug_L"=MAGNESIUM_OW_TOTAL,#removed because <30 samples
+                      "Manganese_ug_L"=`manganese(total)`,
+                      # "Nitrate_mg_L"=`NITROGEN, NITRATE (AS N)_OW_TOTAL`,#removed because <30 samples
+                      "Nitrate_Nitrite_mg_L"=`nitrate-nitrite(total)`,
+                      # "Nitrite_mg_L"=`NITROGEN, NITRITE_OW_TOTAL`,#removed because <30 samples
+                      "pH"=ph,
+                      "Sulfate_mg_L"=`sulfate(total)`,
+                      "Specific_conductivity_epi"=specific_conductance,
+                      "Calcium_mg_L"=`calcium(total)`,
+                      "Color"=`true_color(total)`,
+                      "Secchi_depth"=secchi_disk_depth,
+                    "DOC"=dissolved_organic_carbon,
+                    "TOC"=total_organic_carbon,
+                    "Hardness"=`hardness(total)`,
+                    "TKN"=`kjeldahl_nitrogen(total)`,
+                    "diss_TP"=`phosphorus(dissolved)`)
+df<-as_tibble(df)
+
+vars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","DISSOLVED_OXYGEN_mg_L","ALKALINITY_mg_L","CHLORIDE_mg_L","Ammonia_mg_L","Arsenic_ug_L","Iron_ug_L","Manganese_ug_L","Nitrate_Nitrite_mg_L","pH","Sulfate_mg_L","Specific_conductivity_epi","Calcium_mg_L","Color","Secchi_depth","DOC","Hardness","TKN","TOC","diss_TP")
+
+#Creates 3 estimations in list: CDF, percentiles, means.
+analysis <- cont_analysis(
+  dframe = df,
+  vars = vars,
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+#errorprnt()  #use if there is an error
+
+#creating pdf
+ # probDF<-ash1_wgt(att$CHLOROPHYLL_ug_L,wgt=att$WgtAdj)
+ # probDF<-data.frame(x=probDF$x,y=probDF$y)
+ # ggplot(probDF,aes(x=x,y=y))+
+ #  geom_smooth(method="gam",se=F)
+
+myvars <- c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_mg_L","DISSOLVED_OXYGEN_mg_L","ALKALINITY_mg_L","CHLORIDE_mg_L","Ammonia_mg_L","Arsenic_ug_L","Iron_ug_L","Magnesium_ug_L","Manganese_ug_L","Nitrate_mg_L","Nitrate_Nitrite_mg_L","Nitrite_mg_L","pH","Sulfate_mg_L","Specific_conductivity_epi","Calcium_mg_L","Color","Secchi_depth")
+
+NY<-analysis$CDF %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NY") %>% 
+  filter(Indicator %in% c(myvars)) %>% 
+  mutate(Value=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~as.numeric(Value)*1000,
+    Indicator=TRUE~as.numeric(Value))) %>% 
+  mutate(Indicator=case_when(
+    Indicator=="PHOSPHORUS_mg_L"~"PHOSPHORUS_ug_L",
+    Indicator=TRUE~Indicator)) 
+
+
+#save CDF values for lake reports
+# write.csv(NY,file="C:/Users/amonion/New York State Office of Information Technology Services/BWAM - Lake reports/Current_Script/Lake_Reports/Trends.and.Distributions/percentiles_all.csv")
+
+str(analysis)
+
+```
+
+
+## Plots {.tabset .tabset-fade}
+
+Example plots of the resulting analysis.
+
+### Category bar plots
+
+```{r bar plots, fig.height=10, fig.width=10,echo=FALSE, message=FALSE, warning=FALSE}
+p1<-ggplot(
+  table |> 
+    filter(Indicator %in% c('phos_trophic','chla_trophic','secchi_trophic')) |> 
+    mutate(Indicator=as.character(Indicator),
+           Indicator=ifelse(Indicator=="phos_trophic","Phosphorus",
+                            ifelse(Indicator=="chla_trophic","Chlorophyll a",
+                                   "Secchi"))) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Trophic Thresholds")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
+  facet_wrap(.~Indicator)
+
+p2<-ggplot(
+  table |> 
+    filter(Indicator %in% c('chlorophylla_nla','nitrogen_nla','phosphorus_nla')) |> 
+    mutate(Indicator=as.character(Indicator),
+           Indicator=ifelse(Indicator=="chlorophylla_nla","Chlorophyll a",
+                            ifelse(Indicator=="nitrogen_nla","Nitrogen",
+                                   "Phosphorus"))) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="NLA Thresholds")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
+  facet_wrap(.~Indicator)
+
+p3<-ggplot(
+  table |> 
+    filter(Indicator %in% c('nutrient_limitation')) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Nutrient Limitation")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p4<-ggplot(
+  table |> 
+    filter(Indicator %in% c('color')) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Water Color")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p5<-ggplot(
+  table |> 
+    filter(Indicator %in% c('alkalinity')) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Alkalinity")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p6<-ggplot(
+  table |> 
+    filter(Indicator %in% c('ph_cat')) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="pH")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p7<-ggplot(
+  table |> 
+    filter(Indicator %in% c('microcystin')) |> 
+    mutate(Category=ifelse(Category=="Microcystin Detected","Detected","Not Detected")) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Microcystin Detection")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p8<-ggplot(
+  table |> 
+    filter(Indicator %in% c('zebra_mussel_vulnerability')) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Zebra Mussel Vulnerability")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+
+p9<-ggplot(
+  table |> 
+    filter(Indicator %in% c('dissolved_oxygen_wqs','ph_low_wqs')) |> 
+    mutate(Indicator=ifelse(Indicator=="dissolved_oxygen_wqs","Is oxygen below the water quality standard?",
+                            "Is pH below the water quality standard?")) |> 
+    mutate(Category=ifelse(Category=="yes","no","yes")) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Water Quality Standards for Fishing Use")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
+  facet_wrap(.~Indicator)
+
+
+
+#arranges all plots together
+library(gridExtra)
+library(cowplot)
+
+ggdraw() +
+  draw_plot(p9, 0.05, .842, 0.96, .16) +
+  draw_plot(p1, 0, .675, 1, .167) +
+  draw_plot(p2, 0.04, .51, 0.96, .165) +
+  draw_plot(p3, 0, 0.35, .5, .16) +
+  draw_plot(p4, .5, 0.35, .5, .16) +
+  draw_plot(p5, 0, 0.19, .5, .16) +
+  draw_plot(p6, .5, 0.19, .5, .16) +
+  draw_plot(p7, 0, 0.03, .5, .16) +
+  draw_plot(p8, .5, 0.03, .5, .16) +
+  draw_plot_label(c("(A)", "(B)", "(C)","(D)","(E)","(F)","(G)","(H)","(I)","Percent of Total"), 
+                  c(0,0,0, 0, 0.5,0, 0.5,0, 0.5,0.35), c(1,.842, .675, 0.51,0.51, 0.35,0.35, 0.19,0.19,0.03), size = 13)
+
+```
+
+### Cumulative distribution function
+
+```{r cdf, fig.height=10, fig.width=10,echo=FALSE, message=FALSE, warning=FALSE}
+#fishing use: "DISSOLVED_OXYGEN_mg_L","pH"
+#trophic parameters: "CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth",
+#Other nutrients:"NITROGEN_mg_L","Ammonia_mg_L","Nitrate_Nitrite_mg_L","TKN","DOC","TOC","phosphorus(dissolved)" 
+#Brownification: "DOC","TOC","Color"
+#minerals: "ALKALINITY_mg_L","Sulfate_mg_L","Calcium_mg_L","Hardness",
+#metals: "Arsenic_ug_L","Iron_ug_L","Manganese_ug_L",
+#Salt parameters: "CHLORIDE_mg_L","Specific_conductivity_epi"
+
+p1<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("DISSOLVED_OXYGEN_mg_L","pH")) |> 
+             mutate(Indicator=ifelse(Indicator=="DISSOLVED_OXYGEN_mg_L","Diss. Oxygen (mg/L)","pH")),
+           aes(y=Value,x=Estimate.P,xmin=LCB95Pct.P,xmax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  xlim(0,100)+
+  # facet_wrap(.~Indicator, scales="free")+
+  # guides(fill=FALSE,shape=FALSE)+
+  # labs(title="In Situ Parameters for Fishing Use")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),
+        legend.title = ("Fishing Use"),legend.position = c(0.3, 1))#legend.margin=margin(-10, 0, 0, 0))
+
+#trophic parameters: "CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth",
+p2<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth")) |> 
+             mutate(Value=ifelse(Indicator %in% c("PHOSPHORUS_mg_L"),Value*1000,Value)) |> 
+             mutate(Indicator=ifelse(Indicator=="CHLOROPHYLL_ug_L","Chlorophyll a (ug/L)",
+                                     ifelse(Indicator=="PHOSPHORUS_mg_L","Phosphorus (ug/L)","Secchi (m)")))
+           ,
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  scale_x_break(c(20,28),scales = .2)+
+  labs(title="Trophic Parameters")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+
+#Nitrogen Parameters
+p3<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("NITROGEN_mg_L","Ammonia_mg_L","Nitrate_Nitrite_mg_L","TKN"))|>
+             mutate(Value=ifelse(Indicator=="NITROGEN_mg_L",Value*1000,Value),
+                    Value=ifelse(Indicator=="Ammonia_mg_L",Value*1000,Value),
+                    Value=ifelse(Indicator=="Nitrate_Nitrite_mg_L",Value*1000,Value),
+                    Value=ifelse(Indicator=="TKN",Value*1000,Value),
+                     Value=ifelse(Indicator=="diss_TP",Value*1000,Value)) |> 
+           mutate(Indicator=ifelse(Indicator=="NITROGEN_mg_L","TN (ug/L)",
+                                   ifelse(Indicator=="Ammonia_mg_L","Ammonia (ug/L)",
+                                          ifelse(Indicator=="Nitrate_Nitrite_mg_L","NO3NO2 (ug/L)","TKN (ug/L)")))),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  scale_x_break(c(1000,1500),scales = .2,ticklabels=c(1500,2500))+
+  # scale_x_continuous(trans='log2')+
+  labs(title="Nitrogen Species")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+#phosphorus species
+p4<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("PHOSPHORUS_mg_L","diss_TP"))|>
+           mutate(Indicator=ifelse(Indicator=="PHOSPHORUS_mg_L","TP (mg/L)","diss TP (mg/L)")) ,
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  scale_x_break(c(.05,.1),scales = .2,ticklabels=c(0.10,0.12,0.14))+
+  labs(title="Phosphorus Species")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+#Carbon: "DOC","TOC",
+p5<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("DOC","TOC"))|>
+           mutate(Indicator=paste(Indicator," (mg/L)",sep="")),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  # scale_x_break(c(.05,.1),scales = .2,ticklabels=c(0.10,0.12,0.14))+
+  labs(title="Carbon")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+#minerals low: 
+p6<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("Sulfate_mg_L","Calcium_mg_L"))|>
+           mutate(Indicator=gsub("_mg_L"," (mg/L)",Indicator)),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  # scale_x_break(c(87,110),scales = .2)+
+  labs(title="Minerals")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+#minerals high:
+p7<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("ALKALINITY_mg_L","Hardness","CHLORIDE_mg_L"))|>
+           mutate(Indicator=gsub("_mg_L"," (mg/L)",Indicator),
+                  Indicator=ifelse(Indicator=='Hardness',"Hardness (ug/L)",Indicator)),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
+  xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+#metals: "Arsenic_ug_L","Iron_ug_L","Manganese_ug_L",
+p8<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("Iron_ug_L","Manganese_ug_L"))|>
+           mutate(Indicator=gsub("_ug_L"," (ug/L)",Indicator)),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  # scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
+  labs(title="Metals")+xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+p9<-ggplot(analysis$CDF |> 
+             filter(Indicator %in% c("Arsenic_ug_L"))|>
+           mutate(Indicator=gsub("_ug_L"," (ug/L)",Indicator)),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+  geom_line()+
+  geom_point()+
+  geom_ribbon(alpha=0.5)+
+  ylim(0,100)+
+  # scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
+  xlab(NULL) + ylab(NULL) + theme_minimal()+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
+        axis.text.y.right = element_blank())
+
+
+#ggdraw is inconpatible with scale_x_break so have to generate the plot in powerpoint
+p1
+p2
+p3
+p4
+p5
+p6
+p7
+p8
+p9
+
+
+```
+
+### Probability distribution function
+
+```{r pdf, fig.height=10, fig.width=10,echo=FALSE, message=FALSE, warning=FALSE}
+#first for one parameter
+probDF<-ash1_wgt(df$CHLOROPHYLL_ug_L,wgt=df$WgtAdj)
+probDF<-data.frame(x=probDF$x,y=probDF$y)
+probDF<-probDF %>% 
+  rename(results=x,
+         probability=y) %>% 
+  mutate(parameter="CHLOROPHYLL_ug_L")
+#now for all the rest
+forpdf<-att %>%   
+  select(ALKALINITY_mg_L,Ammonia_mg_L,Arsenic_ug_L,CHLORIDE_mg_L,Calcium_mg_L,Color,
+         DISSOLVED_OXYGEN_mg_L,Iron_ug_L,Magnesium_ug_L,Manganese_ug_L,NITROGEN_mg_L,Nitrate_mg_L,Nitrate_Nitrite_mg_L,Nitrite_mg_L,
+         PHOSPHORUS_mg_L,PH_epi,Secchi_depth,Specific_conductivity_epi,Sulfate_mg_L,WgtAdj) %>% 
+  pivot_longer(-WgtAdj,names_to="parameter",values_to = "value")
+params<-unique(forpdf$parameter)
+nparams<-length(params)
+for(i in 1:nparams){
+  test<-forpdf %>% filter(parameter==params[i])
+  test<-ash1_wgt(test$value,wgt=test$WgtAdj)
+  test<-data.frame(x=test$x,y=test$y)
+test<-test %>% 
+  rename(results=x,
+         probability=y) %>% 
+  mutate(parameter=params[i])
+  probDF<-merge(probDF,test,all=TRUE)
+}
+```
+
+## Comparisons {.tabset .tabset-fade}
+
+Compare with NLA, Northern Appalachian and New Hampshire.
+
+### Category stacked bar graphs
+
+```{r all dots setup, echo=FALSE, warning = FALSE, message = FALSE}
+
+#NLA
+vars<-c("phos_trophic","chla_trophic","chloride")
+
+nla.analysis <- cat_analysis(
+  dframe=nla.att,
+  vars=vars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+#errorprnt()
+
+nla.cat <- nla.analysis %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  mutate(Study="NLA")
+
+#NAP
+nap.analysis <- cat_analysis(
+  dframe=nap.att,
+  vars=vars,
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+
+nap.cat <- nap.analysis %>% 
+  filter(Category!="Total",
+         Subpopulation=="yes") %>% 
+  select(Indicator,
+         Category,
+         Estimate.P,
+         LCB95Pct.P,
+         UCB95Pct.P) %>% 
+  mutate(Study="NAP")
+
+#NH
+# nh.analysis <- cat_analysis(
+#   dframe=nh.att,
+#   vars=c("phos_trophic","EPA_Chla","EPA_TN","DO","CHLORIDE_threshold"),
+#   subpops = "include",
+#   siteID = "SITE_ID",
+#   weight = "WGT_TP_EXT",
+#   xcoord = "LON_DD_N83",
+#   ycoord = "LAT_DD_N83")
+# 
+# nh.cat <- nh.analysis %>% 
+#   filter(Category!="Total",
+#          Subpopulation=="yes") %>% 
+#   select(Indicator,
+#          Category,
+#          Estimate.P,
+#          LCB95Pct.P,
+#          UCB95Pct.P) %>% 
+#   mutate(Study="NH",
+#          Indicator=case_when(Indicator=="phos_trophic"~"Total phosphorus", 
+#                              Indicator=="EPA_TN"~"Total nitrogen", 
+#                              Indicator=="EPA_Chla"~"Total chlorophyll",
+#                              Indicator=="DO"~"Dissolved oxygen",
+#                              Indicator=="CHLORIDE_threshold"~"Chloride"))
+
+```
+
+```{r all dots plot,echo=FALSE, message=FALSE, warning=FALSE}
+cats <- rbind(ny.cat,nla.cat,nap.cat)
+
+ggplot(cats,aes(x=Category,y=Estimate.P,color=Study))+
+  geom_point(position=position_dodge(width=0.2))+
+  ylim(0,100)+
+  geom_errorbar(aes(ymin=LCB95Pct.P, ymax=UCB95Pct.P), width=.25, position=position_dodge(width=0.2))+
+  facet_wrap(.~Indicator, scales="free")
+
+trophic<-cats %>% 
+  filter(Indicator=="Total phosphorus") %>% 
+  mutate(Category=tolower(Category),
+         Study=ifelse(Study=="NY","New York",Study),
+         Study=ifelse(Study=="NLA","National Lakes Assessment",Study),
+         Study=ifelse(Study=="NAP","Northern Appalachians",Study))
+ggplot(trophic,aes(y=Category,x=Estimate.P,color=Study))+
+  geom_point(position=position_dodge(width=0.2),size=1)+
+  theme(axis.title.y=element_blank())+
+  # theme(legend.position="bottom")+
+  theme(legend.title=element_blank())+
+  scale_colour_brewer(type="seq",palette="Set1")+
+  xlab("Percent of Total Lakes")+
+  geom_errorbar(aes(xmin=LCB95Pct.P, xmax=UCB95Pct.P), width=.25, position=position_dodge(width=0.2),size=1)
+
+ggplot(trophic,aes(x = "", y = Estimate.P, fill = Category))+
+  geom_col(color = "black") +
+  scale_colour_brewer(type="seq",palette="Set1")+
+  geom_text(aes(label = paste(ceiling(Estimate.P),"%",sep="")),
+            position = position_stack(vjust = 0.5)) +
+  coord_polar(theta = "y")+
+  theme_void()+
+  theme(legend.title=element_blank())+
+  facet_wrap(vars(Study))
+```
+
+### Cumulative distribution function
+
+```{r all cdf setup, echo=FALSE, warning = FALSE, message = FALSE}
+
+##new hampshire
+
+nh.att <- nh.att %>% 
+  mutate(TN_UG.L=TN_UG.L/1000) %>% 
+  rename(CHLOROPHYLL_ug_L=CHLOROPHYLL.A.x,
+         NITROGEN_mg_L=TN_UG.L,
+         PHOSPHORUS_ug_L=PHOSPHORUS.ug.L.x,
+         CHLORIDE_mg_L=CHLORIDE)
+
+analysis <- cont_analysis(
+  dframe = nh.att,
+  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
+  subpops = ,
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXT",
+  xcoord = "X_ALBERS",
+  ycoord = "Y_ALBERS")
+#errorprnt() for checking errors
+
+NH<-analysis$CDF %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NH")
+
+##northern appalachian
+
+nap.att <- nap.att %>% 
+  rename(CHLOROPHYLL_ug_L=CHLA,
+         NITROGEN_mg_L=TN,
+         PHOSPHORUS_ug_L=TP,
+         CHLORIDE_mg_L=CHLORIDE,
+         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+  
+analysis <- cont_analysis(
+  dframe = nap.att,
+  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+#errorprnt() # to figure out errors
+
+NAP<-analysis$CDF %>% 
+  filter(Subpopulation=="yes") %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NAP")
+
+##national
+
+nla.att <- nla.att %>% 
+  rename(CHLOROPHYLL_ug_L=CHLA,
+         NITROGEN_mg_L=TN,
+         PHOSPHORUS_ug_L=TP,
+         CHLORIDE_mg_L=CHLORIDE,
+         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+
+analysis <- cont_analysis(
+  dframe = nla.att,
+  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
+  subpops = "include",
+  siteID = "SITE_ID",
+  weight = "WGT_TP_EXTENT",
+  xcoord = "XCOORD",
+  ycoord = "YCOORD")
+#errorprnt() # to figure out errors
+
+
+NLA<-analysis$CDF %>% 
+  filter(Subpopulation=="yes") %>% 
+  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
+  mutate(Study="NLA")
+
+##all
+
+all <- rbind(NY,NH,NAP,NLA) %>%
+  mutate(Indicator=case_when(
+    Indicator=="CHLOROPHYLL_ug_L"~"CHLOROPHYLL (ug/L)",
+    Indicator=="NITROGEN_mg_L" ~ "NITROGEN (mg/L)",
+    Indicator=="PHOSPHORUS_ug_L"~"PHOSPHORUS (ug/L)",
+    Indicator=="CHLORIDE_mg_L"~"CHLORIDE (mg/L)",
+    Indicator=="DISSOLVED_OXYGEN_mg_L"~"DISSOLVED_OXYGEN (mg/L)")) %>% 
+  group_by(Indicator,Study) %>% 
+  ungroup() %>% 
+  filter((Indicator=="CHLOROPHYLL (ug/L)"&Value<50)|
+           (Indicator=="CHLORIDE (mg/L)"&Value<250)|
+           (Indicator=="NITROGEN (mg/L)"&Value<2.5)|
+           (Indicator=="PHOSPHORUS (ug/L)"&Value<150)|
+           Indicator=="DISSOLVED_OXYGEN (mg/L)")
+
+table <- data.frame(Indicator=c("CHLOROPHYLL (ug/L)","DISSOLVED_OXYGEN (mg/L)","NITROGEN (mg/L)","PHOSPHORUS (ug/L)"),
+                    Low=c(4.52,3,0.428,16),
+                    High=c(8.43,5,0.655,27.9))
+```
+
+```{r all cdf plot}
+ggplot(all,aes(x=Value,y=Estimate.P,color=Study,shape=Study))+
+  geom_line()+
+  ylim(0,100)+
+  geom_vline(data=table,aes(xintercept=Low),linetype="dashed")+
+  geom_vline(data=table,aes(xintercept=High),linetype="dashed")+
+  facet_wrap(.~Indicator, scales="free")
+```
+
+```{r cslap scorecard}
+
+```

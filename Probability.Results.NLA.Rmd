@@ -31,7 +31,12 @@ library(ggplot2)
 library(lubridate)
 
 # read in NLA data
-setwd("~/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
+library(tidyverse)
+rm(list=setdiff(ls(), c("newdata")))
+  # setwd("C:/Users/amonion/New York State Office of Information Technology Services/BWAM - Lakes Database/Current")
+  # source("new_database/Reading.LMAS.Data.R")
+rm(list=setdiff(ls(), c("newdata")))
+setwd("C:/Users/amonion/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
 
 chem <- read.csv("nla_2017_water_chemistry_chla-data.csv")
 

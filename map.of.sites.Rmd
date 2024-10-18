@@ -1,0 +1,42 @@
+---
+title: "Map.of.sites"
+author: "Alene Onion"
+date: "2/2/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Map
+
+of all the sampled probability sites
+
+```{r cars}
+rm(list=ls())
+library(tidyverse)
+# read in site data
+setwd("C:/Users/amonion/OneDrive - New York State Office of Information Technology Services/Rscripts/Probability.Sampling/")
+sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
+sites<-sites %>% 
+  rename(siteID=SITE_ID,
+         xcoord=LON_DD83,
+         ycoord=LAT_DD83,
+         Eval_Status=EvalStatus) %>% 
+  mutate(Eval_Status=trimws(Eval_Status)) %>% 
+  filter(Eval_Status=="Target_Sampled") %>%    #removing sites that we haven't yet evaluated
+  select(siteID,ycoord,xcoord,LAKE_ID,Eval_Status) %>% distinct()
+
+library(ggmap)
+library(ggrepel)
+
+nybox<-make_bbox(sites,lon=xcoord,lat=ycoord)
+
+print(ny.map1<-qmap(nybox,source="osm",maptype="terrain",color="bw")+
+  geom_point(data=sites,aes(x=xcoord,y=ycoord,label=siteID),size=4))
+
+
+
+```
+
