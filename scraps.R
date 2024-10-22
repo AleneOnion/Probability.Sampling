@@ -417,3 +417,5 @@ table_1
 
 0906BL
 1301LON0428
+
+rmarkdown::render("2024.10.Probability.Sampling_shared.Rmd")
