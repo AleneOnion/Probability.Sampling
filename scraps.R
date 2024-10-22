@@ -366,3 +366,54 @@ obt |> filter(WATERBODY_CODE=="1202UWB0579",
               PARAMETER_NAME=="phosphorus") |> 
   select(EVENT_DATETIME,RESULT_VALUE,METHOD_DETECTION_LIMIT,RESULT_QUALIFIER,SAMPLE_LOCATION) |> 
   distinct() 
+
+
+
+
+
+
+
+norms<-obt |> select(WATERBODY_NAME,WIPWL,MUNICIPALITY,COUNTY,BASIN_NAME) |> 
+  filter(WIPWL=="1311-0010") |> distinct()
+
+if(nrow(norms)>1){
+  norms<-norms %>%    
+    group_by(WIPWL,BASIN_NAME
+             # `Classification`,`Public Water Supply`,
+             # `Watershed Area (AC)`,`Barren Land %`,`Shrub Scrub %`,`Grassland Herbaceous %`,`Forest %`,`Developed %`,`Agriculture %`,`Wetlands %`
+             ) %>% 
+    distinct() %>% 
+    summarise(MUNICIPALITY = str_c(unique(MUNICIPALITY), collapse = ", "),  
+              COUNTY = str_c(unique(COUNTY), collapse = ", "),  
+              WATERBODY_NAME = str_c(unique(WATERBODY_NAME), collapse = ", ")) %>%
+    ungroup()}
+
+library(gt)
+table_1 <- norms %>%
+  select(WATERBODY_NAME,MUNICIPALITY,COUNTY,BASIN_NAME) %>% distinct() |> 
+  mutate(YEAR= paste("2024", sep = " ")) %>% 
+  mutate(Full_MUNICIPALITY = paste("Town(s) of", MUNICIPALITY, sep=" ")) %>%
+  mutate(Full_COUNTY = paste(COUNTY, "County", sep = " ")) %>%
+  select(YEAR,WATERBODY_NAME,Full_MUNICIPALITY,Full_COUNTY,BASIN_NAME) %>% 
+  gt() %>%
+  cols_width(
+    "YEAR" ~ px(45), 
+    "WATERBODY_NAME" ~ px(350),
+    "Full_MUNICIPALITY" ~ px(175),
+    "Full_COUNTY" ~ px(165),
+    "BASIN_NAME" ~ px(175))%>%
+  cols_align(
+    align = c("center"),
+    columns = everything()) %>% 
+  tab_options(
+    column_labels.hidden = TRUE,
+    table.width = pct(100)) %>%
+  tab_style(
+    style = cell_text(size = pct(200)),
+    locations = cells_body(columns = 2, rows = 1))
+
+table_1
+
+
+0906BL
+1301LON0428
