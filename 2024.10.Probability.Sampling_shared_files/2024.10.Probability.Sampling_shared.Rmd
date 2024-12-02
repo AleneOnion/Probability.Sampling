@@ -69,7 +69,7 @@ rm(list=setdiff(ls(), c("obt","newdata","dictionary")))
 
 ```{r pull data,  warning=FALSE}
 # read in site data
-sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
+sites<-read.csv("C:/Users/amonion/OneDrive - New York State Office of Information Technology Services (1)/Rscripts/Probability.Sampling/Probability_Based_Sites_2020_2021.csv")
 sites<-sites %>% 
   mutate(SITE_CODE=gsub("^$|^ $", NA, LAKE_ID)) |> 
   mutate(SITE_CODE=ifelse(!is.na(SITE_CODE),paste(SITE_CODE,"_DH",sep=""),NA)) |> 
@@ -152,8 +152,8 @@ df<-merge(events,df,by=c('SITE_CODE','EVENT_DATETIME','PARAMETER_NAME'),all.x=TR
 ```
 
 
-```{r WQS,  warning=FALSE}
-# Load NYSDEC WQS data from Stay CALM
+```{r WQS, echo=FALSE, message=FALSE, warning=FALSE}
+# Load NYSDEC WQS 
 data("nysdec_wqs", package = "stayCALM")
 
 wqs<-df |> 
@@ -313,8 +313,8 @@ lake_wqs <- lake_wqs$violation_data |>
 #reformat to match df frame
 lake_wqs<-lake_wqs |> 
   mutate(seg_id=ifelse(substr(seg_id,6,9)=="9999","unknown",seg_id)) |> 
-  #removing 6 DO threshold because requires a mean
-  filter(!(parameter=="dissolved_oxygen"&statistic=="mean")) |> 
+  #only using the 4mg/L DO threshold because that's the only one that applies statewide and to a single sample rather than a mean
+  filter(!(parameter=="dissolved_oxygen"&threshold!=4.0)) |> 
   #convert ph parameter name to reflect the threshold
   mutate(parameter=ifelse(parameter=='ph'&threshold=="6.5","ph_low",ifelse(parameter=="ph"&threshold=="8.5","ph_high",parameter))) |> 
   mutate(
@@ -333,7 +333,7 @@ lake_wqs<-lake_wqs |>
 
 Parameters were removed if there were fewer than 30 sites sampled.
 
-```{r adding wqs to df,  warning=FALSE}
+```{r reformatting df,  warning=FALSE}
 #simplify df now that done with STAY:CALM
 df<-df |> 
   select(WIPWL,SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT,RESULT_VALUE) |> distinct() |> 

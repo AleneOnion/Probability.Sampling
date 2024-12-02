@@ -128,7 +128,7 @@ write.csv(sites,file="Probability_Based_Sites_2020_2021.csv",row.names=FALSE)
 new_df<-lmas_df %>% filter(seg_id=="1306-0037") %>% distinct()
 # Extract the package root with base R functions.
 # This directory will provide relative paths between machines.
-root.dir <- gsub("(stayCALM)(.*$)", "\\1", getwd())
+root.dir <- gsub("(stayCALM)(.*$)", "//1", getwd())
 
 #export files as csv
 # This argument is supplied to the Rmarkdown code chunk options.
@@ -313,7 +313,7 @@ rmarkdown::render("2024.09.Probability.Sampling.BASE_onion.Rmd")
 read.csv("junk.chla.albany.csv")
 
 chl<-chl |> 
-  mutate(datetime=gsub("\\ .*","",datetime)) |> 
+  mutate(datetime=gsub("// .*","",datetime)) |> 
   mutate(datetime=as.Date(datetime,format="%m/%d/%Y"))
 
 ggplot( chl 
@@ -419,3 +419,74 @@ table_1
 1301LON0428
 
 rmarkdown::render("2024.10.Probability.Sampling_shared.Rmd")
+
+
+
+watershed<- read.csv("C:/Users/amonion/New York State Office of Information Technology Services/BWAM - Lake reports/Current_Script/Lake_Reports/Watershed.Data/Watersheds_LakeID_NLCD_2021.csv")
+watershed |> 
+  group_by(LAKE_HISTORY_ID) |> 
+  summarise(n=n()) |> 
+  ungroup() |> 
+  filter(n>1)
+
+junk<-obt |> 
+  filter(WATERBODY_CODE=="0703SUN0120") |> 
+  filter(WATERBODY_TYPE=="lake") |> 
+  mutate(year=substr(EVENT_DATETIME,1,4)) |> 
+  select(year,PARAMETER_NAME,FRACTION,UNIT,SAMPLE_LOCATION) |> distinct()
+  
+library(ggplot2)
+library(scales)
+junk<- data.frame(Region=c('Statewide','PEJA/DAC','non-PEJA/DAC'),Rivermiles=c(1.4,2892,1.1))
+
+junk<- data.frame(Region=c('Statewide','PEJA/DAC','non-PEJA/DAC'),
+                  Sampled=c(1.4,2892,1.1),Rivermiles=c(126749,37799,87950))
+
+ggplot(junk,aes(x=Region,y=Rivermiles))+
+  geom_col()+
+  scale_y_continuous(labels = comma)+
+  ggtitle("Total Rivermiles")+
+  theme(axis.title.x = element_blank(),
+        axis.title.y=element_blank())
+
+ggplot(junk,aes(x=Region,y=Sampled))+
+  geom_bar(stat="identity")+
+  scale_y_continuous(trans="log",breaks=c(7,148,2980))+
+  ggtitle("Sampled Rivermiles per 100,000")+
+  theme(axis.title.x = element_blank(),
+        axis.title.y=element_blank())
+
+
+#### LAKES
+junk<- data.frame(Region=c('Statewide','PEJA/DAC','non-PEJA/DAC'),
+                  Sampled=c(10,13,10),Rivermiles=c(6204,1060,5144))
+
+ggplot(junk,aes(x=Region,y=Rivermiles))+
+  geom_col()+
+  scale_y_continuous(labels = comma)+
+  ggtitle("Total Lakes")+
+  theme(axis.title.x = element_blank(),
+        axis.title.y=element_blank())
+
+ggplot(junk,aes(x=Region,y=Sampled))+
+  geom_bar(stat="identity")+
+  ggtitle("% Lakes Sampled")+
+  theme(axis.title.x = element_blank(),
+        axis.title.y=element_blank())
+
+
+junk<-ash1_wgt(df$CHLOROPHYLL_ug_L,wgt=df$WgtAdj)
+junk<-data.frame(x=junk$x,y=junk$y)
+junk<-projunkbDF %>% 
+  rename(results=x,
+         probability=y) %>% 
+  mutate(parameter="CHLOROPHYLL_ug_L")
+
+
+
+junk<-read.csv("C:/Users/amonion/New York State Office of Information Technology Services/BWAM - Lake reports/Current_Script/Lake_Reports/Trends.and.Distributions/trends.csv")
+junk<-junk |> 
+  filter(LAKE_HISTORY_ID %in% c('0402CON0067','0402HEM0044','0402CAN0043','0402HON0057','0704CAN0286','0705KEU0388','0705SEN0369','0705CAY0296','0706OWA0212','0707SKA0193','0702OTI0175'))
+
+
+obt |> filter(WATERBODY_CODE=="0201ALL5357",SITE_CODE%in% c('0201ALL5357_DH','0201ALL5357_HB')) |> select(WIPWL,SITE_CODE,SITE_DESCRIPTION,LATITUDE,LONGITUDE) |> distinct()
