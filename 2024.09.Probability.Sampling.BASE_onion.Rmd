@@ -312,8 +312,8 @@ lake_wqs <- lake_wqs$violation_data |>
 #reformat to match df frame
 lake_wqs<-lake_wqs |> 
   mutate(seg_id=ifelse(substr(seg_id,6,9)=="9999","unknown",seg_id)) |> 
-  #removing 6 DO threshold because requires a mean
-  filter(!(parameter=="dissolved_oxygen"&statistic=="mean")) |> 
+  #only using the 4mg/L DO threshold because that's the only one that applies statewide and to a single sample rather than a mean
+  filter(!(parameter=="dissolved_oxygen"&threshold!=4.0)) |> 
   #convert ph parameter name to reflect the threshold
   mutate(parameter=ifelse(parameter=='ph'&threshold=="6.5","ph_low",ifelse(parameter=="ph"&threshold=="8.5","ph_high",parameter))) |> 
   mutate(
@@ -332,7 +332,7 @@ lake_wqs<-lake_wqs |>
 
 Parameters were removed if there were fewer than 30 sites sampled.
 
-```{r adding wqs to df, echo=FALSE, message=FALSE, warning=FALSE}
+```{r formatting df, echo=FALSE, message=FALSE, warning=FALSE}
 #simplify df now that done with STAY:CALM
 df<-df |> 
   select(WIPWL,SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT,RESULT_VALUE) |> distinct() |> 
@@ -371,7 +371,7 @@ df_num<-df_num |>
                                   (`nitrate-nitrite(total)`+`kjeldahl_nitrogen(total)`),
                                   `nitrogen(total)`))
 
-#parameters with less than 30 samples because that's insufficient samples to run the analysis
+#remove parameters with less than 30 samples because that's insufficient samples to run the analysis
 parameters<-df_num |> 
   pivot_longer(cols=-c(SITE_CODE,EVENT_DATETIME),names_to = "PARAMETER_NAME",values_to="result") |> 
   filter(!is.na(result)) |> 
@@ -470,9 +470,9 @@ df<-df |>
     secchi_disk_depth>=5 ~ "oligotrophic")) %>% 
   #zebra mussels
   mutate(zebra_mussel_vulnerability=case_when(
-    `calcium(total)`<=10 ~ "Not susceptible",
-    between(`calcium(total)`, 10, 20) ~ "May be susceptible",
-    `calcium(total)`>=20 ~ "Highly susceptible")) %>% 
+    `calcium(total)`<=10 ~ "None",
+    between(`calcium(total)`, 10, 20) ~ "May be",
+    `calcium(total)`>=20 ~ "Highly")) %>% 
   #cslap
   mutate(conductance=case_when(
     specific_conductance<=125 ~ "Soft",
@@ -723,7 +723,7 @@ table <- CatExtent %>%
                                             "Medium","Low",
                                             "Acidic","Neutral","Slightly alk","Highly alk",
                                             "Soft","Moderate","Average","Hard","Very hard",
-                                            "Highly susceptible","May be susceptible","Not susceptible",
+                                            "Highly","May be","None",
                                             "eutrophic","mesotrophic","oligotrophic",
                                             "N-limited","Co-limited","P-limited",
                                             "Non-detect","Microcystin Detected","Most disturbed",
@@ -733,7 +733,7 @@ hux <- as_hux(table) #I use huxtable because kable doesn't work on my computer b
 number_format(hux) <- 2
 theme_plain(hux)
 
-ny.cat <- table %>% filter(Indicator %in% c("phos_trophic","Total nitrogen","chla_trophic","Dissolved oxygen","Chloride")) %>% mutate(Study="NY")
+ny.cat <- table %>% filter(Indicator %in% c("phos_trophic","Total nitrogen","chla_trophic","Dissolved oxygen","Chloride","phosphorus_nla","nitrogen_nla","chlorophylla_nla")) %>% mutate(Study="NY")
 
 ```
 
@@ -822,108 +822,142 @@ Example plots of the resulting analysis.
 ```{r bar plots, fig.height=10, fig.width=10,echo=FALSE, message=FALSE, warning=FALSE}
 p1<-ggplot(
   table |> 
+    filter(Indicator %in% c('dissolved_oxygen_wqs','ph_low_wqs')) |> 
+    mutate(Indicator=ifelse(Indicator=="dissolved_oxygen_wqs","Is oxygen below the WQ standard?",
+                            "Is pH below the WQ standard?")) |> 
+    mutate(Category=ifelse(Category=="yes","no","yes"),
+           Category=factor(Category,levels=c("yes","no"))) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Category,fill=Category)) +
+  geom_bar(stat="Identity")+
+  scale_fill_manual(values = c("#606060", "#b8b8b8"))+
+  scale_y_discrete(position = "right")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="(A) Water Quality Standards for Fishing Use")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~Indicator)
+
+
+p2<-ggplot(
+  table |> 
     filter(Indicator %in% c('phos_trophic','chla_trophic','secchi_trophic')) |> 
     mutate(Indicator=as.character(Indicator),
            Indicator=ifelse(Indicator=="phos_trophic","Phosphorus",
                             ifelse(Indicator=="chla_trophic","Chlorophyll a",
                                    "Secchi"))) |> 
     rename(`Percent of Total`=Estimate.P),
-  aes(x=`Percent of Total`,y=Category)) +
+  aes(x=`Percent of Total`,y=Category,fill=Category)) +
   geom_bar(stat="Identity")+
+  scale_fill_manual(values = c("#606060", "#b8b8b8","#b8b8b8"))+
+  scale_y_discrete(position = "right")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Trophic Thresholds")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
+  labs(title="(B) Trophic Thresholds")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
   facet_wrap(.~Indicator)
 
-p2<-ggplot(
+p3<-ggplot(
   table |> 
     filter(Indicator %in% c('chlorophylla_nla','nitrogen_nla','phosphorus_nla')) |> 
     mutate(Indicator=as.character(Indicator),
            Indicator=ifelse(Indicator=="chlorophylla_nla","Chlorophyll a",
                             ifelse(Indicator=="nitrogen_nla","Nitrogen",
-                                   "Phosphorus"))) |> 
+                                   "Phosphorus")),
+           Indicator=factor(Indicator,levels=c("Chlorophyll a","Phosphorus","Nitrogen"))) |> 
     rename(`Percent of Total`=Estimate.P),
-  aes(x=`Percent of Total`,y=Category)) +
+  aes(x=`Percent of Total`,y=Category,fill=Category)) +
   geom_bar(stat="Identity")+
+  scale_fill_manual(values = c("#606060", "#b8b8b8","#b8b8b8"))+
+  scale_y_discrete(position = "right")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="NLA Thresholds")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
+  labs(title="(C) NLA Thresholds")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
   facet_wrap(.~Indicator)
 
-p3<-ggplot(
+p4<-ggplot(
   table |> 
     filter(Indicator %in% c('nutrient_limitation')) |> 
     rename(`Percent of Total`=Estimate.P),
     aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
+  geom_bar(stat="Identity",fill="#b8b8b8")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Nutrient Limitation")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+  scale_y_discrete(position = "right")+
+  labs(title="(D) Nutrient Limitation")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
 
-p4<-ggplot(
+p5<-ggplot(
   table |> 
     filter(Indicator %in% c('color')) |> 
     rename(`Percent of Total`=Estimate.P),
     aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
+  geom_bar(stat="Identity",fill="#b8b8b8")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Water Color")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+  scale_y_discrete(position = "right")+
+  labs(title="(E) Water Color")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
 
-p5<-ggplot(
+p6<-ggplot(
   table |> 
     filter(Indicator %in% c('alkalinity')) |> 
     rename(`Percent of Total`=Estimate.P),
     aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
+  geom_bar(stat="Identity",fill="#b8b8b8")+
+  scale_y_discrete(position = "right")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Alkalinity")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+  labs(title="(F) Alkalinity")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
 
-p6<-ggplot(
+p7<-ggplot(
   table |> 
     filter(Indicator %in% c('ph_cat')) |> 
     rename(`Percent of Total`=Estimate.P),
     aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
+  geom_bar(stat="Identity",fill="#b8b8b8")+
+  scale_y_discrete(position = "right")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="pH")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
-
-p7<-ggplot(
-  table |> 
-    filter(Indicator %in% c('microcystin')) |> 
-    mutate(Category=ifelse(Category=="Microcystin Detected","Detected","Not Detected")) |> 
-    rename(`Percent of Total`=Estimate.P),
-    aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
-  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Microcystin Detection")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+  labs(title="(G) pH")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
 
 p8<-ggplot(
+  table |> 
+    filter(Indicator %in% c('microcystin')) |> 
+    mutate(Category=ifelse(Category=="Microcystin Detected","Yes","No")) |> 
+    rename(`Percent of Total`=Estimate.P),
+    aes(x=`Percent of Total`,y=Category)) +
+  geom_bar(stat="Identity",fill="#b8b8b8")+
+  scale_y_discrete(position = "right")+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="(H) Was Microcystin Detected")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
+
+p9<-ggplot(
   table |> 
     filter(Indicator %in% c('zebra_mussel_vulnerability')) |> 
     rename(`Percent of Total`=Estimate.P),
     aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
+  geom_bar(stat="Identity",fill="#b8b8b8")+
+  scale_y_discrete(position = "right")+
   geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Zebra Mussel Vulnerability")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())
+  labs(title="(I) Zebra Mussel Susceptability")+
+  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="none",
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))
 
-p9<-ggplot(
-  table |> 
-    filter(Indicator %in% c('dissolved_oxygen_wqs','ph_low_wqs')) |> 
-    mutate(Indicator=ifelse(Indicator=="dissolved_oxygen_wqs","Is oxygen below the water quality standard?",
-                            "Is pH below the water quality standard?")) |> 
-    mutate(Category=ifelse(Category=="yes","no","yes")) |> 
-    rename(`Percent of Total`=Estimate.P),
-  aes(x=`Percent of Total`,y=Category)) +
-  geom_bar(stat="Identity")+
-  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
-  labs(title="Water Quality Standards for Fishing Use")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),legend.title=element_blank())+
-  facet_wrap(.~Indicator)
 
 
 
@@ -932,17 +966,17 @@ library(gridExtra)
 library(cowplot)
 
 ggdraw() +
-  draw_plot(p9, 0.05, .842, 0.96, .16) +
-  draw_plot(p1, 0, .675, 1, .167) +
-  draw_plot(p2, 0.04, .51, 0.96, .165) +
-  draw_plot(p3, 0, 0.35, .5, .16) +
-  draw_plot(p4, .5, 0.35, .5, .16) +
-  draw_plot(p5, 0, 0.19, .5, .16) +
-  draw_plot(p6, .5, 0.19, .5, .16) +
-  draw_plot(p7, 0, 0.03, .5, .16) +
-  draw_plot(p8, .5, 0.03, .5, .16) +
-  draw_plot_label(c("(A)", "(B)", "(C)","(D)","(E)","(F)","(G)","(H)","(I)","Percent of Total"), 
-                  c(0,0,0, 0, 0.5,0, 0.5,0, 0.5,0.35), c(1,.842, .675, 0.51,0.51, 0.35,0.35, 0.19,0.19,0.03), size = 13)
+  draw_plot(p1, 0, .842, 0.64, .16) +
+  draw_plot(p2, 0, .675, 1, .167) +
+  draw_plot(p3, 0, .51, 0.955, .165) +
+  draw_plot(p4, 0, 0.35, .49, .16) +
+  draw_plot(p5, .5, 0.35, .485, .16) +
+  draw_plot(p6, 0, 0.19, .49, .16) +
+  draw_plot(p7, .5, 0.19, .49, .16) +
+  draw_plot(p8, 0, 0.03, .45, .16) +
+  draw_plot(p9, .5, 0.03, .47, .16) +
+  draw_plot_label(c("Percent of Total"), 
+                  c(0.35), c(0.03), size = 13)
 
 ```
 
@@ -959,169 +993,46 @@ ggdraw() +
 
 p1<-ggplot(analysis$CDF |> 
              filter(Indicator %in% c("DISSOLVED_OXYGEN_mg_L","pH")) |> 
-             mutate(Indicator=ifelse(Indicator=="DISSOLVED_OXYGEN_mg_L","Diss. Oxygen (mg/L)","pH")),
-           aes(y=Value,x=Estimate.P,xmin=LCB95Pct.P,xmax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+             mutate(Indicator=ifelse(Indicator=="DISSOLVED_OXYGEN_mg_L","Diss. Oxygen (mg/L)","pH"))|> 
+             mutate(vline=ifelse(Indicator=="Diss. Oxygen (mg/L)",4,6.5)),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+ #,fill=Indicator,shape=Indicator
+  geom_vline(aes(xintercept = vline) , linetype =1, size= 0.6,color='#000000')+
   geom_line()+
   geom_point()+
   geom_ribbon(alpha=0.5)+
-  xlim(0,100)+
-  # facet_wrap(.~Indicator, scales="free")+
-  # guides(fill=FALSE,shape=FALSE)+
-  # labs(title="In Situ Parameters for Fishing Use")+
-  theme(axis.title.y=element_blank(),axis.title.x=element_blank(),
-        legend.title = ("Fishing Use"),legend.position = c(0.3, 1))#legend.margin=margin(-10, 0, 0, 0))
-
+  ylim(0,100)+
+  labs(title="Fishing Use")+
+  ylab("Percent of Total Lakes") + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~Indicator,scales="free_x")
+  
 #trophic parameters: "CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth",
 p2<-ggplot(analysis$CDF |> 
              filter(Indicator %in% c("CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth")) |> 
              mutate(Value=ifelse(Indicator %in% c("PHOSPHORUS_mg_L"),Value*1000,Value)) |> 
              mutate(Indicator=ifelse(Indicator=="CHLOROPHYLL_ug_L","Chlorophyll a (ug/L)",
-                                     ifelse(Indicator=="PHOSPHORUS_mg_L","Phosphorus (ug/L)","Secchi (m)")))
-           ,
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
+                                     ifelse(Indicator=="PHOSPHORUS_mg_L","Phosphorus (ug/L)","Secchi (m)"))) |> 
+             mutate(vline=ifelse(Indicator=="Chlorophyll a (ug/L)",10,
+                                     ifelse(Indicator=="Phosphorus (ug/L)",20,2))),
+           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P))+ #,fill=Indicator,shape=Indicator
   geom_line()+
   geom_point()+
   geom_ribbon(alpha=0.5)+
   ylim(0,100)+
-  scale_x_break(c(20,28),scales = .2)+
-  labs(title="Trophic Parameters")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
+  geom_vline(aes(xintercept = vline) , linetype =1, size= 0.6,color='#000000')+
+  labs(title="Trophic Parameters")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~Indicator,scales="free_x")
+  
 
-
-#Nitrogen Parameters
-p3<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("NITROGEN_mg_L","Ammonia_mg_L","Nitrate_Nitrite_mg_L","TKN"))|>
-             mutate(Value=ifelse(Indicator=="NITROGEN_mg_L",Value*1000,Value),
-                    Value=ifelse(Indicator=="Ammonia_mg_L",Value*1000,Value),
-                    Value=ifelse(Indicator=="Nitrate_Nitrite_mg_L",Value*1000,Value),
-                    Value=ifelse(Indicator=="TKN",Value*1000,Value),
-                     Value=ifelse(Indicator=="diss_TP",Value*1000,Value)) |> 
-           mutate(Indicator=ifelse(Indicator=="NITROGEN_mg_L","TN (ug/L)",
-                                   ifelse(Indicator=="Ammonia_mg_L","Ammonia (ug/L)",
-                                          ifelse(Indicator=="Nitrate_Nitrite_mg_L","NO3NO2 (ug/L)","TKN (ug/L)")))),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  scale_x_break(c(1000,1500),scales = .2,ticklabels=c(1500,2500))+
-  # scale_x_continuous(trans='log2')+
-  labs(title="Nitrogen Species")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-#phosphorus species
-p4<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("PHOSPHORUS_mg_L","diss_TP"))|>
-           mutate(Indicator=ifelse(Indicator=="PHOSPHORUS_mg_L","TP (mg/L)","diss TP (mg/L)")) ,
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  scale_x_break(c(.05,.1),scales = .2,ticklabels=c(0.10,0.12,0.14))+
-  labs(title="Phosphorus Species")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-#Carbon: "DOC","TOC",
-p5<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("DOC","TOC"))|>
-           mutate(Indicator=paste(Indicator," (mg/L)",sep="")),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  # scale_x_break(c(.05,.1),scales = .2,ticklabels=c(0.10,0.12,0.14))+
-  labs(title="Carbon")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-#minerals low: 
-p6<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("Sulfate_mg_L","Calcium_mg_L"))|>
-           mutate(Indicator=gsub("_mg_L"," (mg/L)",Indicator)),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  # scale_x_break(c(87,110),scales = .2)+
-  labs(title="Minerals")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-#minerals high:
-p7<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("ALKALINITY_mg_L","Hardness","CHLORIDE_mg_L"))|>
-           mutate(Indicator=gsub("_mg_L"," (mg/L)",Indicator),
-                  Indicator=ifelse(Indicator=='Hardness',"Hardness (ug/L)",Indicator)),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
-  xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-#metals: "Arsenic_ug_L","Iron_ug_L","Manganese_ug_L",
-p8<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("Iron_ug_L","Manganese_ug_L"))|>
-           mutate(Indicator=gsub("_ug_L"," (ug/L)",Indicator)),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  # scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
-  labs(title="Metals")+xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-p9<-ggplot(analysis$CDF |> 
-             filter(Indicator %in% c("Arsenic_ug_L"))|>
-           mutate(Indicator=gsub("_ug_L"," (ug/L)",Indicator)),
-           aes(x=Value,y=Estimate.P,ymin=LCB95Pct.P,ymax=UCB95Pct.P,fill=Indicator,shape=Indicator))+
-  geom_line()+
-  geom_point()+
-  geom_ribbon(alpha=0.5)+
-  ylim(0,100)+
-  # scale_x_break(c(200,210),scales = .2,ticklabels=c(250,350))+
-  xlab(NULL) + ylab(NULL) + theme_minimal()+
-  theme(axis.title.y=element_blank(),
-        axis.title.x=element_blank(),
-        legend.position="bottom",legend.title = element_blank(),legend.margin=margin(-10, 0, 0, 0),
-        axis.text.y.right = element_blank())
-
-
-#ggdraw is inconpatible with scale_x_break so have to generate the plot in powerpoint
-p1
-p2
-p3
-p4
-p5
-p6
-p7
-p8
-p9
-
+ggdraw() +
+  draw_plot(p1, 0, 0.03, 0.43, .97) +
+  draw_plot(p2, .43, 0.03, 0.57, .97) +
+  draw_plot_label(c("(A)", "(B)"), 
+                  c(0,0.4), c(1,1), size = 13)
 
 ```
 
@@ -1129,22 +1040,25 @@ p9
 
 ```{r pdf, fig.height=10, fig.width=10,echo=FALSE, message=FALSE, warning=FALSE}
 #first for one parameter
-probDF<-ash1_wgt(df$CHLOROPHYLL_ug_L,wgt=df$WgtAdj)
+probDF<-df |> select(CHLOROPHYLL_ug_L,WgtAdj) |> filter(!is.na(CHLOROPHYLL_ug_L))
+probDF<-ash1_wgt(probDF$CHLOROPHYLL_ug_L,wgt=probDF$WgtAdj)
 probDF<-data.frame(x=probDF$x,y=probDF$y)
 probDF<-probDF %>% 
   rename(results=x,
          probability=y) %>% 
   mutate(parameter="CHLOROPHYLL_ug_L")
 #now for all the rest
-forpdf<-att %>%   
-  select(ALKALINITY_mg_L,Ammonia_mg_L,Arsenic_ug_L,CHLORIDE_mg_L,Calcium_mg_L,Color,
-         DISSOLVED_OXYGEN_mg_L,Iron_ug_L,Magnesium_ug_L,Manganese_ug_L,NITROGEN_mg_L,Nitrate_mg_L,Nitrate_Nitrite_mg_L,Nitrite_mg_L,
-         PHOSPHORUS_mg_L,PH_epi,Secchi_depth,Specific_conductivity_epi,Sulfate_mg_L,WgtAdj) %>% 
-  pivot_longer(-WgtAdj,names_to="parameter",values_to = "value")
+forpdf<-df %>%   
+  select(ALKALINITY_mg_L,Ammonia_mg_L,Arsenic_ug_L,CHLORIDE_mg_L,CHLOROPHYLL_ug_L,Calcium_mg_L,Color,
+         DISSOLVED_OXYGEN_mg_L,DOC,Hardness,Iron_ug_L,Manganese_ug_L,NITROGEN_mg_L,Nitrate_Nitrite_mg_L,
+         PHOSPHORUS_mg_L,Secchi_depth,Specific_conductivity_epi,Sulfate_mg_L,TKN,TOC,diss_TP,pH,temperature,
+         WgtAdj) %>% 
+  pivot_longer(-WgtAdj,names_to="parameter",values_to = "value") |> 
+  filter(!is.na(value))
 params<-unique(forpdf$parameter)
 nparams<-length(params)
 for(i in 1:nparams){
-  test<-forpdf %>% filter(parameter==params[i])
+  test<-forpdf %>% filter(parameter==params[i]) |> filter()
   test<-ash1_wgt(test$value,wgt=test$WgtAdj)
   test<-data.frame(x=test$x,y=test$y)
 test<-test %>% 
@@ -1153,6 +1067,154 @@ test<-test %>%
   mutate(parameter=params[i])
   probDF<-merge(probDF,test,all=TRUE)
 }
+
+
+
+p1<-ggplot(probDF |> 
+             filter(parameter %in% c("DISSOLVED_OXYGEN_mg_L","pH")) |> 
+             mutate(parameter=ifelse(parameter=="DISSOLVED_OXYGEN_mg_L","Diss. Oxygen (mg/L)","pH"))|> 
+             mutate(vline=ifelse(parameter=="Diss. Oxygen (mg/L)",4,6.5)),
+           aes(x=results,y=probability))+ 
+  # geom_vline(aes(xintercept = vline) , linetype =1, size= 0.6,color='#000000')+
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  # geom_ribbon(alpha=0.5)+
+  # ylim(0,100)+
+  labs(title="(A) Fishing Use")+
+  ylab(NULL) + xlab("Value") + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free")+
+  coord_flip()
+  
+  
+#trophic parameters: "CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth",
+p2<-ggplot(probDF |> 
+             filter(parameter %in% c("CHLOROPHYLL_ug_L","PHOSPHORUS_mg_L","Secchi_depth"),
+                    results>0) |> 
+             mutate(results=ifelse(parameter %in% c("PHOSPHORUS_mg_L"),results*1000,results)) |> 
+             mutate(parameter=ifelse(parameter=="CHLOROPHYLL_ug_L","Chlorophyll a (ug/L)",
+                                     ifelse(parameter=="PHOSPHORUS_mg_L","Phosphorus (ug/L)","Secchi (m)"))) |> 
+             mutate(vline=ifelse(parameter=="Chlorophyll a (ug/L)",10,
+                                     ifelse(parameter=="Phosphorus (ug/L)",20,2))),
+           aes(x=results,y=probability))+ 
+  # geom_vline(aes(xintercept = vline) , linetype =1, size= 0.6,color='#000000')+
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(B) Trophic Parameters")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free")+
+  coord_flip()
+  
+
+#Nitrogen Parameters
+p3<-ggplot(probDF |> 
+             filter(parameter %in% c("NITROGEN_mg_L","Ammonia_mg_L","Nitrate_Nitrite_mg_L","TKN"),
+                    results>0)|>
+             mutate(results=ifelse(parameter=="NITROGEN_mg_L",results*1000,results),
+                    results=ifelse(parameter=="Ammonia_mg_L",results*1000,results),
+                    results=ifelse(parameter=="Nitrate_Nitrite_mg_L",results*1000,results),
+                    results=ifelse(parameter=="TKN",results*1000,results),
+                     results=ifelse(parameter=="diss_TP",results*1000,results)) |> 
+           mutate(parameter=ifelse(parameter=="NITROGEN_mg_L","TN (ug/L)",
+                                   ifelse(parameter=="Ammonia_mg_L","Ammonia (ug/L)",
+                                          ifelse(parameter=="Nitrate_Nitrite_mg_L","NO3NO2 (ug/L)","TKN (ug/L)")))),
+           aes(x=results,y=probability))+ 
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(C) Nitrogen")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free",nrow=1)+
+  coord_flip()
+
+#phosphorus species
+p4<-ggplot(probDF |> 
+             filter(parameter %in% c("PHOSPHORUS_mg_L","diss_TP"),
+                    results>0)|>
+           mutate(parameter=ifelse(parameter=="PHOSPHORUS_mg_L","Total (mg/L)","Dissolved (mg/L)")) ,
+           aes(x=results,y=probability))+ 
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(D) Phosphorus")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free",nrow=1)+
+  coord_flip()
+
+plot1<-ggdraw() +
+  draw_plot(p1, 0, 0, 0.17, 1) +
+  draw_plot(p2, .17, 0, 0.25, 1) +
+  draw_plot(p3, .42, 0, 0.4, 1) +
+  draw_plot(p4, .82, 0, 0.18, 1) 
+
+
+
+#Carbon: "DOC","TOC",
+p5<-ggplot(probDF |> 
+             filter(parameter %in% c("DOC","TOC"),
+                    results>0)|>
+          mutate(parameter=ifelse(parameter=="DOC","Dissolved","Total")) |> 
+           mutate(parameter=paste(parameter," (mg/L)",sep="")),
+           aes(x=results,y=probability))+ 
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(E) Organic Carbon")+
+  ylab(NULL) + xlab("Value") + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free",nrow=1)+
+  coord_flip()
+
+#metals: "Arsenic_ug_L","Iron_ug_L","Manganese_ug_L",
+p6<-ggplot(probDF |> 
+             filter(parameter %in% c("Iron_ug_L","Manganese_ug_L","Arsenic_ug_L"),
+                    results>0)|>
+           mutate(parameter=gsub("_ug_L"," (ug/L)",parameter)),
+           aes(x=results,y=probability))+ 
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(F) Metals")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free",nrow=1)+
+  coord_flip()
+
+
+
+#minerals low: 
+p7<-ggplot(probDF |> 
+             filter(parameter %in% c("Sulfate_mg_L","Calcium_mg_L","ALKALINITY_mg_L","Hardness","CHLORIDE_mg_L"),
+                    results>0)|>
+           mutate(parameter=gsub("_mg_L"," (mg/L)",parameter)),
+           aes(x=results,y=probability))+ 
+  geom_line()+
+  geom_area(colour="black", fill="#808080", alpha=.2)+
+  labs(title="(G) Minerals")+
+  ylab(NULL) + xlab(NULL) + theme_minimal()+
+  theme(panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'))+
+  facet_wrap(.~parameter,scales="free",nrow=1)+
+  coord_flip()
+
+plot2<-ggdraw() +
+  draw_plot(p5, 0, 0, 0.18, 1) +
+  draw_plot(p6, .18, 0, 0.27, 1) +
+  draw_plot(p7, .45, 0, 0.45, 1) +
+  draw_plot_label(c("Percent of Total Lakes"), 
+                  c(0.3), c(0.07), size = 13)
+
+ggdraw()+
+  draw_plot(plot2,0,0,1,.5)+
+  draw_plot(plot1,0,.5,1,.5)
+
+
+
 ```
 
 ## Comparisons {.tabset .tabset-fade}
@@ -1164,7 +1226,7 @@ Compare with NLA, Northern Appalachian and New Hampshire.
 ```{r nla nap setup, echo=FALSE, warning = FALSE, message = FALSE}
 
 #NLA
-vars<-c("phos_trophic","chla_trophic","chloride")
+vars<-c("phos_trophic","chla_trophic","chloride","phosphorus_nla","nitrogen_nla","chlorophylla_nla")
 
 nla.analysis <- cat_analysis(
   dframe=nla.att,
@@ -1246,125 +1308,68 @@ trophic<-cats %>%
          Study=ifelse(Study=="NAP","Northern Appalachians",Study)) |> distinct()
 
 
-ggplot(trophic |> mutate(Indicator=ifelse(Indicator=="chla_trophic","Chlorophyll a","Total Phosphorus")),aes(y=Category,x=Estimate.P,color=Study))+
-  geom_point(position=position_dodge(width=0.2),size=1)+
-  theme(axis.title.y=element_blank())+
-  theme(legend.position="bottom")+
-  theme(legend.title=element_blank())+
-  scale_colour_brewer(type="seq",palette="Set1")+
+p1<-ggplot(
+  trophic |> 
+    filter(Indicator %in% c('phos_trophic','chla_trophic')) |> 
+    mutate(Indicator=as.character(Indicator),
+           Indicator=ifelse(Indicator=="phos_trophic","Phosphorus","Chlorophyll a")) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Study,fill=Study)) +
+  geom_bar(stat="Identity")+
+  scale_fill_manual(values = c("#606060", "#b8b8b8","#FFFFFF"))+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="Trophic Thresholds")+
+  theme(axis.title.y=element_blank(),
+        axis.title.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'),
+        legend.title=element_blank(),
+        legend.position="none")+
+  facet_grid(Indicator ~ Category)
+
+
+
+nla<-cats %>% 
+  filter(Indicator %in% c("phosphorus_nla","nitrogen_nla","chlorophylla_nla")) %>% 
+  mutate(Category=tolower(Category),
+         Study=ifelse(Study=="NY","New York",Study),
+         Study=ifelse(Study=="NLA","National Lakes Assessment",Study),
+         Study=ifelse(Study=="NAP","Northern Appalachians",Study)) |> distinct() |> 
+  mutate(Category=factor(Category,levels=c('poor','fair','good')))
+
+
+p2<-ggplot(
+  nla |> 
+    mutate(Indicator=as.character(Indicator),
+           Indicator=ifelse(Indicator=="phosphorus_nla","Phosphorus",
+                            ifelse(Indicator=="nitrogen_nla","Nitrogen","Chlorophyll a"))) |> 
+    rename(`Percent of Total`=Estimate.P),
+  aes(x=`Percent of Total`,y=Study,fill=Study)) +
+  geom_bar(stat="Identity")+
+  scale_fill_manual(values = c("#606060", "#b8b8b8","#FFFFFF"))+
+  geom_errorbar(aes(xmin=LCB95Pct.P,xmax=UCB95Pct.P),width=0.2)+
+  labs(title="NLA Thresholds")+
   xlab("Percent of Total Lakes")+
-  geom_errorbar(aes(xmin=LCB95Pct.P, xmax=UCB95Pct.P), width=.25, position=position_dodge(width=0.2),size=1)+
-   facet_wrap(.~Indicator)
+  theme(axis.title.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        panel.grid = element_line(color = '#dddddd'),
+        panel.background = element_rect(colour = '#B8B8B8'),
+        legend.title=element_blank(),
+        legend.position="bottom")+
+  facet_grid(Indicator ~ Category)
 
-```
 
-### Cumulative distribution function
-
-```{r all cdf setup, echo=FALSE, warning = FALSE, message = FALSE}
-
-##new hampshire
-
-nh.att <- nh.att %>% 
-  mutate(TN_UG.L=TN_UG.L/1000) %>% 
-  rename(CHLOROPHYLL_ug_L=CHLOROPHYLL.A.x,
-         NITROGEN_mg_L=TN_UG.L,
-         PHOSPHORUS_ug_L=PHOSPHORUS.ug.L.x,
-         CHLORIDE_mg_L=CHLORIDE)
-
-analysis <- cont_analysis(
-  dframe = nh.att,
-  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
-  subpops = ,
-  siteID = "SITE_ID",
-  weight = "WGT_TP_EXT",
-  xcoord = "X_ALBERS",
-  ycoord = "Y_ALBERS")
-#errorprnt() for checking errors
-
-NH<-analysis$CDF %>% 
-  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NH")
-
-##northern appalachian
-
-nap.att <- nap.att %>% 
-  rename(CHLOROPHYLL_ug_L=CHLA,
-         NITROGEN_mg_L=TN,
-         PHOSPHORUS_ug_L=TP,
-         CHLORIDE_mg_L=CHLORIDE,
-         DISSOLVED_OXYGEN_mg_L=OXYGEN)
+ggdraw() +
+  draw_plot(p1, 0, .63, 1, .37) +
+  draw_plot(p2, 0, 0, 1, .63) 
   
-analysis <- cont_analysis(
-  dframe = nap.att,
-  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
-  subpops = "include",
-  siteID = "SITE_ID",
-  weight = "WGT_TP_EXTENT",
-  xcoord = "XCOORD",
-  ycoord = "YCOORD")
-#errorprnt() # to figure out errors
-
-NAP<-analysis$CDF %>% 
-  filter(Subpopulation=="yes") %>% 
-  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NAP")
-
-##national
-
-nla.att <- nla.att %>% 
-  rename(CHLOROPHYLL_ug_L=CHLA,
-         NITROGEN_mg_L=TN,
-         PHOSPHORUS_ug_L=TP,
-         CHLORIDE_mg_L=CHLORIDE,
-         DISSOLVED_OXYGEN_mg_L=OXYGEN)
-
-analysis <- cont_analysis(
-  dframe = nla.att,
-  vars = c("CHLOROPHYLL_ug_L","NITROGEN_mg_L","PHOSPHORUS_ug_L","CHLORIDE_mg_L"),
-  subpops = "include",
-  siteID = "SITE_ID",
-  weight = "WGT_TP_EXTENT",
-  xcoord = "XCOORD",
-  ycoord = "YCOORD")
-#errorprnt() # to figure out errors
+ 
 
 
-NLA<-analysis$CDF %>% 
-  filter(Subpopulation=="yes") %>% 
-  select(Indicator,Value,Estimate.P,LCB95Pct.P,UCB95Pct.P) %>% 
-  mutate(Study="NLA")
 
-##all
 
-all <- rbind(NY,NH,NAP,NLA) %>%
-  mutate(Indicator=case_when(
-    Indicator=="CHLOROPHYLL_ug_L"~"CHLOROPHYLL (ug/L)",
-    Indicator=="NITROGEN_mg_L" ~ "NITROGEN (mg/L)",
-    Indicator=="PHOSPHORUS_ug_L"~"PHOSPHORUS (ug/L)",
-    Indicator=="CHLORIDE_mg_L"~"CHLORIDE (mg/L)",
-    Indicator=="DISSOLVED_OXYGEN_mg_L"~"DISSOLVED_OXYGEN (mg/L)")) %>% 
-  group_by(Indicator,Study) %>% 
-  ungroup() %>% 
-  filter((Indicator=="CHLOROPHYLL (ug/L)"&Value<50)|
-           (Indicator=="CHLORIDE (mg/L)"&Value<250)|
-           (Indicator=="NITROGEN (mg/L)"&Value<2.5)|
-           (Indicator=="PHOSPHORUS (ug/L)"&Value<150)|
-           Indicator=="DISSOLVED_OXYGEN (mg/L)")
-
-table <- data.frame(Indicator=c("CHLOROPHYLL (ug/L)","DISSOLVED_OXYGEN (mg/L)","NITROGEN (mg/L)","PHOSPHORUS (ug/L)"),
-                    Low=c(4.52,3,0.428,16),
-                    High=c(8.43,5,0.655,27.9))
 ```
 
-```{r all cdf plot}
-ggplot(all,aes(x=Value,y=Estimate.P,color=Study,shape=Study))+
-  geom_line()+
-  ylim(0,100)+
-  geom_vline(data=table,aes(xintercept=Low),linetype="dashed")+
-  geom_vline(data=table,aes(xintercept=High),linetype="dashed")+
-  facet_wrap(.~Indicator, scales="free")
-```
-
-```{r cslap scorecard}
-
-```
