@@ -981,7 +981,7 @@ ggplot(forplot5, aes(x=Category,fill=study)) +
 #     chemical_name=="DISSOLVED OXYGEN_DP_NA" ~ x,
 #     !(chemical_name=="DISSOLVED OXYGEN_DP_NA") ~ result_value)) %>%
 #   select(-c(result_value,profile_depth,x)) %>%
-#   rename(result_value=result) %>% 
+#   rename(result_value=result) %>%
 #   distinct(LAKE_ID,SAMPLE_DATE,chemical_name,.keep_all = TRUE)
 # 
 # n_att<-lab2 %>% spread(chemical_name,result_value,fill = NA)
