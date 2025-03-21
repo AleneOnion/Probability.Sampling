@@ -490,3 +490,17 @@ junk<-junk |>
 
 
 obt |> filter(WATERBODY_CODE=="0201ALL5357",SITE_CODE%in% c('0201ALL5357_DH','0201ALL5357_HB')) |> select(WIPWL,SITE_CODE,SITE_DESCRIPTION,LATITUDE,LONGITUDE) |> distinct()
+
+
+new_wipwl<-obt |> 
+  filter(WIPWL=="unknown",WATERBODY_TYPE == "lake",
+         PARAMETER_NAME!="hab_status",
+         grepl("Centroid",SITE_DESCRIPTION)) |> 
+  select(WATERBODY_CODE,WATERBODY_NAME,WATERBODY_CLASS,PUBLIC_WATER_SUPPLY,LATITUDE,LONGITUDE) |> 
+  distinct()
+  
+#identify cslap lakes
+#coordinates
+#classification
+
+

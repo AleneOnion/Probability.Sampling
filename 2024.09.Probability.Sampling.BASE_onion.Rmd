@@ -25,6 +25,11 @@ library(ggplot2)
 library(lubridate)
 library(ggbreak) 
 library(spsurvey) #This code was written for spsurvey v5.0.0
+library(arrow)
+library(tidyverse)
+library(ggplot2)
+library(gridExtra)
+library(cowplot)
 
 ```
 
@@ -37,9 +42,7 @@ In this script, weight is adjusted because of the proportional design. In the fu
 Epilimnetic values are used to compare across lake types. Dissolved oxygen and ph values are synthesized by the stay calm package to represent a single value for an event.
 
 ```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
-library(arrow)
-library(tidyverse)
-library(ggplot2)
+
 
  # obt_dir <- file.path("L:",
  #                      "DOW",
@@ -95,8 +98,9 @@ df<-obt |>
     ) |> 
   #simplify date and convert non-detect to 0
   mutate(EVENT_DATETIME=as.Date(as.POSIXct(EVENT_DATETIME), tz = ""),
-         RESULT_VALUE=ifelse(grepl("U",RESULT_QUALIFIER),0,RESULT_VALUE),
-           RESULT_VALUE=ifelse(is.na(RESULT_VALUE),0,RESULT_VALUE)) |> 
+         RESULT_VALUE=ifelse(grepl("U",RESULT_QUALIFIER),0,RESULT_VALUE)) |> 
+  filter(!is.na(RESULT_VALUE)) |> 
+
   #convert two dates sampled by CSLAP and LCI to the same artificially
   mutate(EVENT_DATETIME=as.Date(ifelse(EVENT_DATETIME == "2021-09-13"&SITE_CODE=="0704CAN0286_CSL1",as.character("2021-09-19"),as.character(EVENT_DATETIME))))
 
@@ -282,14 +286,20 @@ new_wipwl<-wqs |>
          class="c",
          water_type="Lake/Reservoir",
          wbcatgry="Unassessed",
-         x305b_code="3") |> 
-  select(seg_id,class,water_type,wbcatgry,x305b_code) |> distinct()
+         x305b_code="3",
+         type_name = "Lake/Reservoir",
+         spatial_extent = "nys") |> 
+  select(seg_id,class,water_type,wbcatgry,x305b_code,type_name,spatial_extent) |> distinct()
 #convert unknown WIPWL to location id
 wqs<-wqs |> 
   mutate(seg_id=ifelse(seg_id=="unknown",paste(substr(site_id,1,4),"-9999",sep=""),seg_id))
 #modify the wipwl_df to include these fake WIPWL
 fake_wipwl<-stayCALM::wipwl_df
-fake_wipwl<-merge(new_wipwl,fake_wipwl,by=c('seg_id','class','water_type','wbcatgry','x305b_code'),all=TRUE)
+fake_wipwl<-merge(new_wipwl,fake_wipwl,by=c('seg_id','class','water_type','wbcatgry','x305b_code','type_name','spatial_extent'),all=TRUE)
+
+```
+
+```{r running stay calm}
 
 #pulling excursion data
 lake_wqs<-stayCALM::wqs_violations(
@@ -427,6 +437,7 @@ df<-df |>
   # CAN'T do because nitrate only collected in half the samples DIN:TP
   # mutate(DINTP=ifelse(!is.na()&!is.na(),`NITROGEN, NITRATE (AS N)_OW_TOTAL`/`phosphorus(total)`) %>% 
   # trophic status
+  # NLA thresholds are published in appendix C (pg 199) of this document: https://www.epa.gov/system/files/documents/2024-11/national-lakes-assessment-2022_tsd_august2024.pdf
   mutate(phos_trophic=case_when(
     `phosphorus(total)`<=0.01 ~ "oligotrophic",
     between(`phosphorus(total)`,0.01,0.02) ~ "mesotrophic",
@@ -444,10 +455,11 @@ df<-df |>
     `nitrogen(total)`<=0.428 ~ "Good",
     between(`nitrogen(total)`, 0.428, 0.655) ~ "Fair",
     `nitrogen(total)`>=0.655 ~ "Poor")) %>%
-  mutate(`chlorophylla_nla`=case_when(
-    `chlorophyll-a(total)`<=4.52 ~ "Good",
-    between(`chlorophyll-a(total)`, 4.52, 8.43) ~ "Fair",
-    `chlorophyll-a(total)`>=8.43 ~ "Poor")) %>%
+  #NOTE that the NLA has both a biological threshold and a trophic threshold for chlorophyll a - we are using the trophic threshold here
+  mutate(`chlorophylla_nla`=case_when(   
+    `chlorophyll-a(total)`<=2 ~ "Good",
+    between(`chlorophyll-a(total)`, 2, 7) ~ "Fair",
+    `chlorophyll-a(total)`>=7 ~ "Poor")) %>%
   # microcystin
   mutate(microcystin=case_when(
     is.na(microcystin) ~"Non-detect",
@@ -962,9 +974,6 @@ p9<-ggplot(
 
 
 #arranges all plots together
-library(gridExtra)
-library(cowplot)
-
 ggdraw() +
   draw_plot(p1, 0, .842, 0.64, .16) +
   draw_plot(p2, 0, .675, 1, .167) +
