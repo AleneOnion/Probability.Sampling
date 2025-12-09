@@ -1,0 +1,152 @@
+---
+title: "Probability Sampling Results 2021"
+author: "Alene Onion and Tony Olsen of USEPA (updated by Sabrina Xie)"
+date: "Last compiled `r format(Sys.time(), '%d %B, %Y, %X')`"
+output: html_document
+---
+
+```{r GlobalOptions}
+options(knitr.duplicate.label = 'allow')
+```
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(huxtable)
+library(ggplot2)
+library(lubridate)
+library(spsurvey)
+```
+
+
+This script uses EPA's SPsurvey package to estimate how many of NYS ponded waters have "excursions" from NY StayCALM water quality standards based on the results of 2020-2021 probability-based sampling.
+
+```{r}
+
+#read in data on excursions
+excursions <- read.csv("probability.data.excursions.csv")
+excursions <- excursions %>% 
+  select(parameter,n_exceedances,LAKE_ID) %>% 
+  spread(parameter,n_exceedances,fill = 0) %>% 
+  mutate(LAKE_ID=toupper(LAKE_ID))
+
+#read in data on sites
+sites<-read.csv("Probability_Based_Sites_2020_2021.csv")
+sites<-sites %>% 
+  rename(siteID=SITE_ID,
+         xcoord=LON_DD83,
+         ycoord=LAT_DD83,
+         Eval_Status=EvalStatus) %>% 
+  #removing sites that we haven't yet evaluated
+  filter(Eval_Status!="") %>% 
+  mutate(Eval_Status=trimws(Eval_Status))
+
+att <- merge(sites,excursions,by="LAKE_ID",all.x=TRUE)
+
+# Create a Target/NonTarget status variable
+att<-att %>% 
+  mutate(statusTNT="Target",
+         statusTNT=ifelse(Eval_Status=="NonTarget","NonTarget",statusTNT))
+
+# Calculate the adjusted weights
+# The numerator is the original frame size value
+# the denominator is the actual number of samples evaluated in each category
+
+#number of lakes in each probability category
+cats <- data.frame(
+  PROB_CAT=unique(att$PROB_CAT),
+  n=as.double(1,2,3,4,5))
+
+for(i in 1:5){
+  b <- cats[i,1]
+  a <- att %>%
+    filter(PROB_CAT==b)
+  cats[i,2] <- nrow(a)
+}
+
+# add adjusted weight variable
+att<-att %>% 
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/21),
+         PROB_CAT==">50"~(500/33)))
+
+# should add up to 6437
+print(sum(att$WgtAdj))
+
+# Estimate excursions
+cat.extent <- cat_analysis(
+  dframe=att,
+  vars=c("ammonia","dissolved_oxygen","nitrite","ph","phosphorus"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- cat.extent %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+#Estimate total excursions
+total.df <- read.csv("probability.data.excursions.csv") %>% 
+  select(n_exceedances,LAKE_ID)
+total.df <- aggregate(total.df$n_exceedances, by=list(Category=total.df$LAKE_ID), FUN=sum) %>% 
+  rename(LAKE_ID=Category) %>% 
+  mutate(LAKE_ID=toupper(LAKE_ID))
+total.df <- merge(sites,total.df,by="LAKE_ID",all.x=TRUE) %>% 
+  mutate(WgtAdj=case_when(
+         PROB_CAT=="(1,4]"~(1828/29),
+         PROB_CAT=="(4,10]"~(2490/15),
+         PROB_CAT=="(10,20]"~(1003/18),
+         PROB_CAT=="(20,50]"~(616/21),
+         PROB_CAT==">50"~(500/33)))
+
+fully.support <- cat_analysis(
+  dframe=total.df,
+  vars=c("x"),
+  subpops = ,
+  siteID = "siteID",
+  weight = "WgtAdj",
+  xcoord = "xcoord",
+  ycoord = "ycoord")
+table <- fully.support %>% select(Category,nResp,Estimate.P,LCB95Pct.P,UCB95Pct.P)
+hux <- as_hux(table)
+number_format(hux) <- 2
+theme_plain(hux)
+
+results <- rbind(cat.extent,fully.support) %>% 
+  filter(Category!="Total") %>% 
+  mutate(Indicator=case_when(
+    Indicator=="x" ~ "all parameters",
+    Indicator=TRUE ~ Indicator),
+    Category=case_when(
+      Indicator=="all parameters" & Category>1 ~ "1",
+      Category=TRUE ~ Category
+    )) %>% 
+  rename(pct=Estimate.P,
+         pct_lcb=LCB95Pct.P,
+         pct_ucb=UCB95Pct.P) %>%
+  select(Indicator,Category,pct,pct_lcb,pct_ucb) %>% 
+  group_by(Indicator,Category) %>% 
+  summarize(pct=(sum(pct)),pct_lcb=sum(pct_lcb),pct_ucb=sum(pct_ucb)) %>% 
+  ungroup()
+
+results$Indicator <- factor(results$Indicator, levels=c("ammonia","dissolved_oxygen","nitrite","ph","phosphorus","all parameters"))
+
+results <- results %>% 
+  mutate(Category=case_when(
+    Category==0 ~ "Non-excursion",
+    Category==1 ~ "Excursion"
+  ))
+
+#side by side plots
+print(ggplot(results,aes(x=Category,y=pct)) +
+  geom_point() +
+  geom_errorbar(aes(ymin=pct_lcb,ymax=pct_ucb),width=0.2) +
+  ylim(0,100)+
+  facet_grid( ~ Indicator, switch="x", scales="free") +
+  labs(y="Percent of total",x="Parameter",title="NYS Ponded Waters Supporting Fishing Use"))
+
+```

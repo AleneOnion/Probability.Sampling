@@ -282,13 +282,13 @@ parameters<-df |> select(WATERBODY_CODE,WATERBODY_NAME,EVENT_DATETIME,PARAMETER_
 write.csv(df,file="junk.df.csv",row.names=FALSE)
 junk<-read.csv("junk.df.csv")
 
-df<-read.csv("junk.df.csv")
-dbrief<- df|> select(siteID,SITE_CODE,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct() 
+dfj<-read.csv("junk.df.csv")
+dbrief<- dfj|> select(siteID,SITE_CODE,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct() 
 dbrief<-as_tibble(dbrief)
 
 vars <- c("phos_trophic", "chla_trophic")
 
-brief<-att |> select(siteID,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct()
+brief<-df |> select(siteID,WgtAdj,xcoord,ycoord,phos_trophic,chla_trophic) |> distinct()
 
 #analysis
 CatExtent <- cat_analysis(
@@ -490,3 +490,28 @@ junk<-junk |>
 
 
 obt |> filter(WATERBODY_CODE=="0201ALL5357",SITE_CODE%in% c('0201ALL5357_DH','0201ALL5357_HB')) |> select(WIPWL,SITE_CODE,SITE_DESCRIPTION,LATITUDE,LONGITUDE) |> distinct()
+
+
+new_wipwl<-obt |> 
+  filter(WIPWL=="unknown",WATERBODY_TYPE == "lake",
+         PARAMETER_NAME!="hab_status",
+         grepl("Centroid",SITE_DESCRIPTION)) |> 
+  select(WATERBODY_CODE,WATERBODY_NAME,WATERBODY_CLASS,PUBLIC_WATER_SUPPLY,LATITUDE,LONGITUDE) |> 
+  distinct()
+  
+#identify cslap lakes
+#coordinates
+#classification
+
+
+
+
+crooked<-newdata %>% 
+  filter(CHARACTERISTIC_NAME=="PHOSPHORUS, TOTAL",LAKE_HISTORY_ID=="0602CRO0073",substr(SAMPLE_DATE,1,4)=="2021") %>% 
+  select(SAMPLE_DATE,INFORMATION_TYPE,RSLT_RESULT_VALUE,RSLT_VALIDATOR_QUALIFIER,RSLT_INTERPRETED_QUALIFIER) %>% distinct() %>% 
+  mutate(RSLT_RESULT_VALUE=as.numeric(RSLT_RESULT_VALUE))
+library(ggplot2)
+ggplot(crooked,aes(x=SAMPLE_DATE,y=RSLT_RESULT_VALUE))+
+  geom_point()+
+  geom_smooth()+
+  facet_wrap(~INFORMATION_TYPE,scales="free_y")
