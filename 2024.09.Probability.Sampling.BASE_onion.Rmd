@@ -162,8 +162,7 @@ data("nysdec_wqs", package = "stayCALM")
 wqs<-df |> 
   filter(
     PARAMETER_NAME %in% c("chlorophyll-a","dissolved_oxygen","ph","phosphorus","temperature"),
-    !(FRACTION %in% c("dissolved", "unknown") &
-      PARAMETER_NAME %in% "phosphorus"),
+    !(FRACTION %in% c("dissolved", "unknown") & PARAMETER_NAME %in% "phosphorus"),
     !(UNIT %in% c("rfu", "RFU") & PARAMETER_NAME %in% c("chlorophyll_a", "chlorophyll-a"))) |> 
   select(
     seg_id = WIPWL,
@@ -343,7 +342,7 @@ lake_wqs<-lake_wqs |>
     UNIT=units,
     RESULT_VALUE=result
   ) |> 
-  select(WIPWL,SITE_CODE,EVENT_DATETIME,SAMPLE_LOCATION,FRACTION,PARAMETER_NAME,UNIT,RESULT_VALUE,attaining_wqs) |> distinct()
+  select(WIPWL,SITE_CODE,EVENT_DATETIME,FRACTION,SAMPLE_LOCATION,PARAMETER_NAME,UNIT,RESULT_VALUE,attaining_wqs) |> distinct()
 
 ```
 
