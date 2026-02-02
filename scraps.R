@@ -504,6 +504,7 @@ new_wipwl<-obt |>
 #classification
 
 
+<<<<<<< HEAD
 
 
 crooked<-newdata %>% 
@@ -515,3 +516,5 @@ ggplot(crooked,aes(x=SAMPLE_DATE,y=RSLT_RESULT_VALUE))+
   geom_point()+
   geom_smooth()+
   facet_wrap(~INFORMATION_TYPE,scales="free_y")
+=======
+>>>>>>> 8f847b30743d920dff83aa64ede816d490e40ac8
